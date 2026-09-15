@@ -1,22 +1,3 @@
-# Python
-__pycache__/
-*.py[cod]
-.venv/
-venv/
-
-# Node
-node_modules/
-dist/
-
-# 运行时数据与本地环境
-data/
-*.db
-*.sqlite3
-.env
-.env.*
-.install_ok
-
-# IDE / 系统
+.DS_Store
 .idea/
 .vscode/
-.DS_Store

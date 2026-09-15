@@ -1,0 +1,1042 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ShopHelper · 跨境电商客服 Agent 管理后台（演示版）</title>
+<!--
+  ════════════════════════════════════════════════════════════════
+  ShopHelper 跨境电商客服 Agent · 运营管理后台（单文件离线演示版）
+  ────────────────────────────────────────────────────────────────
+  · 双击即可打开，零依赖、零安装，可直接发布到 GitHub Pages
+  · 数据内嵌 + localStorage 持久化（右上角可一键重置演示数据）
+  · Agent 引擎为后端 agent_runtime.py 的 1:1 JS 移植（意图打分 /
+    四级安全护栏 / ReAct Trace / 配置驱动）
+  · 完整前后端分离版（React+AntD / FastAPI+SQLAlchemy）见项目源码
+  ════════════════════════════════════════════════════════════════
+-->
+<style>
+:root{
+  --bg:#f0f2f5; --card:#fff; --side:#001529; --side-hover:#112a45;
+  --primary:#1677ff; --primary-bg:#e6f4ff; --text:#1f1f1f; --muted:#8c8c8c;
+  --border:#e8e8e8; --green:#52c41a; --green-bg:#f6ffed; --orange:#fa8c16;
+  --orange-bg:#fff7e6; --red:#ff4d4f; --red-bg:#fff1f0; --gold:#faad14;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif;background:var(--bg);color:var(--text);font-size:14px}
+.app{display:flex;min-height:100vh}
+/* ── 侧边栏 ── */
+.sidebar{width:216px;background:var(--side);color:#fff;display:flex;flex-direction:column;position:fixed;top:0;bottom:0;left:0;z-index:10}
+.logo{padding:20px 20px 16px;border-bottom:1px solid rgba(255,255,255,.08)}
+.logo b{font-size:17px;display:block}
+.logo span{font-size:11px;color:rgba(255,255,255,.45);letter-spacing:.5px}
+nav{flex:1;padding:12px 0}
+nav a{display:flex;align-items:center;gap:10px;padding:11px 20px;color:rgba(255,255,255,.65);cursor:pointer;font-size:14px;transition:.15s;border-left:3px solid transparent}
+nav a:hover{color:#fff;background:var(--side-hover)}
+nav a.active{color:#fff;background:var(--side-hover);border-left-color:var(--primary)}
+.sidebar-foot{padding:14px 20px;border-top:1px solid rgba(255,255,255,.08)}
+.sidebar-foot button{width:100%;padding:7px;background:transparent;border:1px solid rgba(255,255,255,.25);color:rgba(255,255,255,.75);border-radius:6px;cursor:pointer;font-size:12px}
+.sidebar-foot button:hover{border-color:#fff;color:#fff}
+.sidebar-foot p{font-size:11px;color:rgba(255,255,255,.35);margin-top:10px}
+/* ── 主区 ── */
+main{flex:1;margin-left:216px;padding:0 24px 40px}
+.topbar{display:flex;align-items:baseline;gap:12px;padding:20px 0 14px;border-bottom:1px solid var(--border);margin-bottom:20px;background:var(--bg)}
+.topbar h1{font-size:20px;font-weight:600}
+.topbar span{color:var(--muted);font-size:13px}
+.page{display:none}
+.page.active{display:block;animation:fade .2s}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+/* ── 通用组件 ── */
+.card{background:var(--card);border-radius:8px;padding:18px;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.grid{display:grid;gap:16px}
+.stat-grid{grid-template-columns:repeat(4,1fr)}
+.card h3{font-size:14px;font-weight:600;margin-bottom:14px;color:var(--text)}
+.stat .num{font-size:28px;font-weight:700;color:var(--primary)}
+.stat .lbl{color:var(--muted);font-size:12px;margin-top:4px}
+.stat .sub{font-size:11px;color:var(--muted);margin-top:6px}
+table{width:100%;border-collapse:collapse}
+th{font-size:12px;color:var(--muted);font-weight:500;text-align:left;padding:9px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:10px;border-bottom:1px solid #f0f0f0;font-size:13px;vertical-align:top}
+tr:hover td{background:#fafafa}
+.tag{display:inline-block;padding:1px 9px;border-radius:10px;font-size:12px;line-height:18px;white-space:nowrap}
+.tag.green{color:var(--green);background:var(--green-bg);border:1px solid #b7eb8f}
+.tag.gray{color:#8c8c8c;background:#fafafa;border:1px solid #d9d9d9}
+.tag.blue{color:var(--primary);background:var(--primary-bg);border:1px solid #91caff}
+.tag.orange{color:var(--orange);background:var(--orange-bg);border:1px solid #ffd591}
+.tag.red{color:var(--red);background:var(--red-bg);border:1px solid #ffa39e}
+.tag.gold{color:#d48806;background:#fffbe6;border:1px solid #ffe58f}
+.btn{padding:5px 14px;border-radius:6px;border:1px solid var(--border);background:#fff;cursor:pointer;font-size:13px;color:var(--text)}
+.btn:hover{border-color:var(--primary);color:var(--primary)}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn.primary:hover{background:#4096ff}
+.btn.danger:hover{border-color:var(--red);color:var(--red)}
+.btn.mini{padding:2px 9px;font-size:12px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+input[type=text],input[type=password],input[type=number],select,textarea{width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;background:#fff;color:var(--text)}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 2px rgba(22,119,255,.12)}
+textarea{resize:vertical;line-height:1.6}
+.form-row{margin-bottom:13px}
+.form-row label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}
+.form-2col{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+/* ── 模态框 ── */
+.modal-mask{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;display:flex;align-items:flex-start;justify-content:center;padding:60px 20px;overflow:auto}
+.modal{background:#fff;border-radius:10px;width:640px;max-width:100%;animation:fade .18s}
+.modal.wide{width:820px}
+.modal-head{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border)}
+.modal-head b{font-size:15px}
+.modal-close{cursor:pointer;color:var(--muted);font-size:18px;line-height:1}
+.modal-close:hover{color:var(--red)}
+.modal-body{padding:18px 20px;max-height:62vh;overflow:auto}
+.modal-foot{padding:13px 20px;border-top:1px solid var(--border);text-align:right;display:flex;gap:9px;justify-content:flex-end}
+/* ── Toast ── */
+#toast{position:fixed;top:18px;left:50%;transform:translateX(-50%);z-index:200;display:flex;flex-direction:column;gap:8px;align-items:center}
+.toast-item{background:#fff;border-radius:8px;padding:9px 18px;box-shadow:0 4px 14px rgba(0,0,0,.16);font-size:13px;animation:fade .2s}
+/* ── 知识库页 ── */
+.kb-layout{display:grid;grid-template-columns:210px 1fr;gap:16px;align-items:start}
+.cat-item{padding:9px 12px;border-radius:6px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:13px}
+.cat-item:hover{background:#f5f5f5}
+.cat-item.active{background:var(--primary-bg);color:var(--primary);font-weight:600}
+.cat-item .cnt{font-size:11px;color:var(--muted)}
+.toolbar{display:flex;gap:10px;margin-bottom:14px;align-items:center;flex-wrap:wrap}
+.toolbar input[type=text]{width:260px}
+/* ── 条状图 ── */
+.bar-row{display:grid;grid-template-columns:86px 1fr 44px;gap:10px;align-items:center;font-size:12px;margin-bottom:9px}
+.bar-track{background:#f0f0f0;border-radius:5px;height:16px;overflow:hidden}
+.bar-fill{height:100%;background:var(--primary);border-radius:5px;transition:width .4s;min-width:2px}
+.bar-row .v{text-align:right;color:var(--muted)}
+/* ── 时间线 ── */
+.tl{border-left:2px solid #e8e8e8;padding-left:16px}
+.tl-item{position:relative;padding-bottom:15px}
+.tl-item::before{content:'';position:absolute;left:-21px;top:4px;width:8px;height:8px;border-radius:50%;background:var(--primary)}
+.tl-item .t{font-size:12px;color:var(--muted)}
+.tl-item .d{font-size:13px;margin-top:2px}
+/* ── 模型卡片 ── */
+.model-grid{grid-template-columns:repeat(3,1fr)}
+.model-card .mc-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px}
+.model-card .mc-head b{font-size:14px}
+.mc-row{display:flex;gap:8px;margin-bottom:8px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+.mc-row .k{min-width:60px}
+.mc-row .v{color:var(--text)}
+.mc-actions{display:flex;gap:8px;margin-top:12px;padding-top:12px;border-top:1px dashed var(--border)}
+.test-result{margin-top:10px;padding:8px 11px;border-radius:6px;font-size:12px;display:none}
+/* ── 测试台 ── */
+.pg-layout{display:grid;grid-template-columns:1fr 350px;gap:16px;align-items:start}
+.chat-box{height:480px;overflow-y:auto;padding:16px;background:#fafafa;border-radius:8px;border:1px solid var(--border)}
+.msg{max-width:82%;margin-bottom:13px}
+.msg.user{margin-left:auto}
+.msg .bubble{padding:10px 13px;border-radius:10px;white-space:pre-wrap;font-size:13px;line-height:1.65}
+.msg.user .bubble{background:var(--primary);color:#fff;border-top-right-radius:2px}
+.msg.bot .bubble{background:#fff;border:1px solid var(--border);border-top-left-radius:2px}
+.msg .who{font-size:11px;color:var(--muted);margin-bottom:3px}
+.chat-input{display:flex;gap:9px;margin-top:13px}
+.chips{display:flex;gap:7px;flex-wrap:wrap;margin-top:11px}
+.chip{padding:3px 11px;border-radius:13px;background:#fff;border:1px solid var(--border);font-size:12px;cursor:pointer;color:var(--text)}
+.chip:hover{border-color:var(--primary);color:var(--primary)}
+.trace-step{display:flex;gap:9px;padding:7px 0;border-bottom:1px dashed #f0f0f0;font-size:12px}
+.trace-step:last-child{border-bottom:none}
+.trace-step .ico{flex-shrink:0}
+.trace-step .s{color:var(--muted);min-width:78px}
+.meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;margin-bottom:13px}
+.meta-grid .k{color:var(--muted)}
+.empty{color:var(--muted);text-align:center;padding:34px 0;font-size:13px}
+.hint-bar{background:var(--primary-bg);border:1px solid #91caff;color:#0958d9;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:16px}
+@media (max-width:1080px){.pg-layout,.kb-layout{grid-template-columns:1fr}.stat-grid,.model-grid{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="logo"><b>🛍️ ShopHelper</b><span>AGENT ADMIN · 演示版</span></div>
+    <nav id="nav">
+      <a data-page="dashboard" class="active">📊 概览仪表盘</a>
+      <a data-page="knowledge">📚 知识库管理</a>
+      <a data-page="prompts">📝 Prompt 管理</a>
+      <a data-page="models">🤖 大模型接入</a>
+      <a data-page="playground">🧪 Agent 测试台</a>
+    </nav>
+    <div class="sidebar-foot">
+      <button id="resetBtn">↺ 重置演示数据</button>
+      <p>单文件离线版 v1.0<br>数据存于浏览器本地</p>
+    </div>
+  </aside>
+  <main>
+    <div class="topbar"><h1 id="pageTitle">概览仪表盘</h1><span id="pageDesc"></span></div>
+    <section id="page-dashboard" class="page active"></section>
+    <section id="page-knowledge" class="page"></section>
+    <section id="page-prompts" class="page"></section>
+    <section id="page-models" class="page"></section>
+    <section id="page-playground" class="page"></section>
+  </main>
+</div>
+<div id="modal-root"></div>
+<div id="toast"></div>
+
+<script>
+'use strict';
+/* ══════════════════════════════════════════════════════════════
+   一、种子数据（与后端 seed.py 一致）
+   ══════════════════════════════════════════════════════════════ */
+const SEED = () => {
+  const categories = [
+    {id:1,name:'退换货政策',nameEn:'Return & Refund Policy',icon:'📋',desc:'退货时限、运费承担、不支持退货的商品'},
+    {id:2,name:'物流运费',nameEn:'Shipping & Delivery',icon:'📦',desc:'配送时效、运费标准、物流查询、清关'},
+    {id:3,name:'尺码指南',nameEn:'Size Guide',icon:'📏',desc:'服装尺码、鞋码换算、选码建议'},
+    {id:4,name:'支付退款',nameEn:'Payment & Refund',icon:'💳',desc:'支付方式、退款到账时效'},
+    {id:5,name:'投诉流程',nameEn:'Complaint Handling',icon:'📝',desc:'投诉处理流程与响应时效'},
+  ];
+  const items = [
+    {id:1,categoryId:1,titleZh:'退换货基本政策',titleEn:'Return & Refund Policy',
+     answerZh:'📋 退换货政策：\n• 收到商品后 30 天内可发起退货\n• 商品需保持原包装完整、未使用状态\n• 质量问题退货：卖家承担退货运费\n• 个人原因退货：消费者承担退货运费\n• 退款将在仓库收到退货后 3-5 个工作日原路退回',
+     answerEn:'📋 Return & Refund Policy:\n• Returns accepted within 30 days of receiving your order\n• Items must be in original packaging, unused condition\n• Quality issues: we cover return shipping\n• Personal reasons: buyer covers return shipping\n• Refunds processed within 3-5 business days after we receive the return',
+     keywordsZh:'退,换,退款,退货,退款政策,退换,return,exchange,refund',keywordsEn:'return,refund,exchange,send back,money back',status:'published',hitCount:42},
+    {id:2,categoryId:1,titleZh:'退货运费由谁承担',titleEn:'Who pays return shipping',
+     answerZh:'质量问题导致的退货由卖家承担退货运费；因个人原因（如不喜欢、尺码不合）退货，由消费者承担退货运费。',
+     answerEn:'For quality issues, we cover the return shipping. For personal reasons (e.g. dislike, wrong size), the buyer covers return shipping.',
+     keywordsZh:'退货运费,运费谁出,谁承担运费,质量问题退货,return shipping,who pays shipping',keywordsEn:'return shipping,who pays,quality issue,personal reason',status:'published',hitCount:17},
+    {id:3,categoryId:1,titleZh:'不支持退货的商品',titleEn:'Non-returnable items',
+     answerZh:'⚠️ 例外：内衣/泳装/耳环等个人卫生用品不支持退货；定制商品不支持退货；促销清仓商品仅支持换货。',
+     answerEn:'⚠️ Exceptions: Personal hygiene items (underwear, swimwear, earrings) and custom items are not eligible for return. Clearance items are exchange-only.',
+     keywordsZh:'内衣,泳装,耳环,定制商品,清仓,不支持退货,例外',keywordsEn:'underwear,swimwear,earrings,custom,clearance,not eligible,exception',status:'published',hitCount:9},
+    {id:4,categoryId:2,titleZh:'标准配送与运费',titleEn:'Standard Shipping & Fee',
+     answerZh:'📦 标准配送\n• 处理时间：下单后 1-3 个工作日发货\n• 运输时间：美国 5-10 天 / 欧洲 7-15 天 / 东南亚 5-8 天\n• 运费：满 $50 包邮，不满 $50 收取 $5.99',
+     answerEn:'📦 Standard Shipping\n• Processing: 1-3 business days\n• Transit: US 5-10 days / Europe 7-15 days / SE Asia 5-8 days\n• Fee: Free over $50, $5.99 under $50',
+     keywordsZh:'物流,运费,快递,运输,发货,配送,多久到,shipping,delivery',keywordsEn:'shipping,delivery,fee,how long,arrive,standard',status:'published',hitCount:55},
+    {id:5,categoryId:2,titleZh:'加急配送说明',titleEn:'Express Shipping',
+     answerZh:'【加急配送】处理时间：24 小时内发货；运输时间：美国 2-4 天 / 欧洲 3-6 天；运费：$12.99。',
+     answerEn:'【Express Shipping】Processing: within 24 hours; Transit: US 2-4 days / Europe 3-6 days; Fee: $12.99.',
+     keywordsZh:'加急,加急配送,快递加急,express,fast shipping,faster',keywordsEn:'express,fast shipping,expedite,24 hours',status:'published',hitCount:31},
+    {id:6,categoryId:2,titleZh:'物流查询方式',titleEn:'How to track',
+     answerZh:'🔍 物流查询：发货后会收到含 tracking number 的确认邮件，可在 17track.net 输入单号查询。',
+     answerEn:'🔍 Track your package via 17track.net using the tracking number in your confirmation email.',
+     keywordsZh:'跟踪,查询物流,怎么查物流,tracking,track,17track,单号',keywordsEn:'track,tracking,17track,tracking number,where is my package',status:'published',hitCount:23},
+    {id:7,categoryId:2,titleZh:'关税与清关说明',titleEn:'Customs & Duties',
+     answerZh:'跨境包裹可能产生目的地国家的关税，由收件人承担。清关通常需要 1-3 个工作日。',
+     answerEn:'Cross-border parcels may incur customs duties in the destination country, payable by the recipient. Customs clearance usually takes 1-3 business days.',
+     keywordsZh:'关税,清关,海关,customs,duty,tax',keywordsEn:'customs,duty,tax,clearance,import fee',status:'published',hitCount:12},
+    {id:8,categoryId:3,titleZh:'服装尺码对照表',titleEn:'Clothing Size Chart',
+     answerZh:'【服装】S: 86-91cm胸围 / M: 96-101cm / L: 106-111cm / XL: 116-121cm。不同品牌尺码可能有差异，请参考商品页 Size Chart。',
+     answerEn:'【Clothing】S: 34-36" bust / M: 38-40" / L: 42-44" / XL: 46-48". Sizing varies by brand — check the Size Chart on each product page.',
+     keywordsZh:'尺码,大小,size,胸围,码数,尺寸,多少码,偏大,偏小,合身',keywordsEn:'size,fit,measurement,chart,bust,too big,too small,sizing',status:'published',hitCount:47},
+    {id:9,categoryId:3,titleZh:'鞋码换算说明',titleEn:'Shoe Size Conversion',
+     answerZh:'【鞋码】US6=36码(23cm) / US7=37码(23.5cm) / US8=38码(24cm) / US9=39码(25cm) / US10=41码(26cm)。脚宽建议选大一码。',
+     answerEn:'【Shoes】US6=EU36(9.1") / US7=EU37(9.3") / US8=EU38(9.4") / US9=EU39(9.8") / US10=EU41(10.2"). If you have wide feet, go up one size.',
+     keywordsZh:'鞋码,鞋子尺码,shoe,US码,欧码,脚宽,大一码',keywordsEn:'shoe size,eu size,wide feet,go up one size,us size',status:'published',hitCount:19},
+    {id:10,categoryId:4,titleZh:'支持的支付方式',titleEn:'Accepted Payment Methods',
+     answerZh:'💳 支付方式：\n• PayPal / Visa / MasterCard / American Express\n• Apple Pay / Google Pay\n• Klarna 分期付款（仅限美国）',
+     answerEn:'💳 Accepted Payment Methods:\n• PayPal / Visa / MasterCard / American Express\n• Apple Pay / Google Pay\n• Klarna installment (US only)',
+     keywordsZh:'支付,付款,paypal,信用卡,visa,mastercard,怎么付,支付方式,分期,klarna',keywordsEn:'payment,pay,paypal,credit card,visa,mastercard,apple pay,klarna',status:'published',hitCount:38},
+    {id:11,categoryId:4,titleZh:'退款到账时效',titleEn:'Refund Timeline',
+     answerZh:'⏱ 退款时效：PayPal 1-3 个工作日；信用卡 3-7 个工作日（取决于发卡行）。',
+     answerEn:'⏱ Refund Processing: PayPal 1-3 business days; Credit/Debit Cards 3-7 business days (depends on issuing bank).',
+     keywordsZh:'退款时效,多久到账,退款多久,到账时间,refund time',keywordsEn:'refund time,how long refund,when refund,processing time',status:'published',hitCount:27},
+    {id:12,categoryId:5,titleZh:'投诉处理流程',titleEn:'Complaint Handling Process',
+     answerZh:'📝 投诉处理流程：\n1. 首先表达歉意，承认您的感受\n2. 收集具体问题（拍照/描述）\n3. 提供解决方案：退换/部分退款/补偿优惠券\n4. 如需升级，将转接主管处理\n5. 所有投诉 24 小时内首次响应',
+     answerEn:'📝 Complaint Handling:\n1. We first apologize and acknowledge your concerns\n2. Gather specific details (photos/description)\n3. Offer a solution: return/refund/coupon\n4. If needed, escalate to supervisor\n5. All complaints receive initial response within 24 hours',
+     keywordsZh:'投诉,抱怨,不满意,差评,complaint,糟糕,生气,失望,举报',keywordsEn:'complaint,angry,disappointed,terrible,awful,bad experience,report',status:'published',hitCount:8},
+    {id:13,categoryId:5,titleZh:'投诉响应时效',titleEn:'Complaint Response Time',
+     answerZh:'所有投诉均在 24 小时内首次响应；涉及退款的投诉将在 2 小时内转接客服专员跟进。',
+     answerEn:'All complaints receive an initial response within 24 hours. Complaints involving refunds are escalated to a specialist within 2 hours.',
+     keywordsZh:'投诉多久回复,响应时间,首次响应,response time,SLA',keywordsEn:'response time,sla,how long complaint,first response',status:'published',hitCount:14},
+  ];
+  const prompts = [
+    {id:1,name:'跨境电商客服 · 人设主 Prompt',scene:'system',variables:'language,intent',
+     note:'Agent 的角色设定、工作流程、安全规则与回复风格（来自人设 Prompt v1.0）',enabled:true,version:2,
+     content:'You are a professional cross-border e-commerce customer service assistant. You help overseas consumers with their questions about orders, shipping, returns, and product details.\n\n## Your Working Style\n1. Always identify the customer\'s real intent first (FAQ / order tracking / refund / product inquiry)\n2. For policy questions (returns, shipping fees, size guides), search the knowledge base\n3. For order/shipping questions, ask for the order number, then use search tools to find relevant information\n4. Reply in the same language as the customer\'s question — current language: {language}\n5. Format your replies clearly: cite policies for policy questions, show status & ETA for orders\n\n## Safety Rules\n- Never promise refunds or compensation - tell customers their request will be forwarded to the team\n- Never share internal pricing or supplier information\n- If a customer is angry or mentions legal action → acknowledge their frustration and offer to escalate to a human agent\n\n## Reply Style\n- Friendly and helpful tone\n- Short paragraphs, bullet points when listing options\n- No markdown formatting codes',
+     versions:[{version:1,note:'初始版本（人设 Prompt v1.0）',operator:'管理员-Leo',time:'2026-06-18 09:12'},
+              {version:2,note:'细化安全规则与双语回复要求',operator:'运营-Amy',time:'2026-06-25 15:40'}]},
+    {id:2,name:'FAQ 政策类回复话术',scene:'faq',variables:'category,kb_content',
+     note:'知识库命中后的回复包装话术，支持中英双语占位',enabled:true,version:1,
+     content:'📚 以下是关于「{category}」的详细信息：\n\n{kb_content}\n\n还有其他需要帮您的吗？',
+     versions:[{version:1,note:'初始版本',operator:'运营-Amy',time:'2026-06-18 09:30'}]},
+    {id:3,name:'退款请求应答话术',scene:'refund',variables:'order_id',
+     note:'退款场景的标准化应答，强调「不承诺退款」的安全红线',enabled:true,version:1,
+     content:'📌 已为您受理退款请求（订单 {order_id}）。退款需人工审核，客服专员将在 24 小时内通过邮件与您联系。',
+     versions:[{version:1,note:'初始版本',operator:'运营-Amy',time:'2026-06-18 09:35'}]},
+    {id:4,name:'投诉安抚话术',scene:'complaint',variables:'',
+     note:'投诉场景的情绪安抚模板，配合 🔴 极高风险升级策略',enabled:true,version:1,
+     content:'非常抱歉给您带来了不好的体验！😔 我已记录您的反馈并升级至客服主管，预计 2 小时内专员与您联系。',
+     versions:[{version:1,note:'初始版本',operator:'运营-Ken',time:'2026-06-18 09:38'}]},
+  ];
+  const models = [
+    {id:1,name:'GPT-4o-mini · 海外英文线',provider:'openai',baseUrl:'https://api.openai.com/v1',apiKey:'sk-********************',
+     modelName:'gpt-4o-mini',temperature:0.3,maxTokens:1024,topP:1.0,routeLang:'en',isDefault:true,remark:'承接海外英文咨询主力模型'},
+    {id:2,name:'DeepSeek-V3 · 中文线',provider:'deepseek',baseUrl:'https://api.deepseek.com/v1',apiKey:'sk-********************',
+     modelName:'deepseek-chat',temperature:0.5,maxTokens:2048,topP:1.0,routeLang:'zh',isDefault:false,remark:'中文咨询，性价比高'},
+    {id:3,name:'Qwen-Max · 兜底策略',provider:'qwen',baseUrl:'https://dashscope.aliyuncs.com/compatible-mode/v1',apiKey:'sk-********************',
+     modelName:'qwen-max',temperature:0.3,maxTokens:1024,topP:1.0,routeLang:'all',isDefault:false,remark:'英文线异常时的兜底模型'},
+  ];
+  const chats = [
+    {input:"What's the status of my order US2024-3821?",language:'en',intent:'ORDER',confidence:0.88,safety:'🟢 低风险',reply:'（历史会话记录）',time:'09-12 08:31'},
+    {input:'Where is my package with tracking number DHL9876543210?',language:'en',intent:'SHIPPING',confidence:0.85,safety:'🟢 低风险',reply:'（历史会话记录）',time:'09-12 08:35'},
+    {input:"What's your return policy? Can I return if I don't like the color?",language:'en',intent:'FAQ',confidence:0.72,safety:'🟢 低风险',reply:'（历史会话记录）',time:'09-12 09:02'},
+    {input:"I'm not sure about sizing. What size should I get if I usually wear M?",language:'en',intent:'FAQ',confidence:0.64,safety:'🟢 低风险',reply:'（历史会话记录）',time:'09-12 09:15'},
+    {input:'What payment methods do you accept? Do you take PayPal?',language:'en',intent:'FAQ',confidence:0.76,safety:'🟢 低风险',reply:'（历史会话记录）',time:'09-12 10:20'},
+    {input:"I received a damaged item and I'm very disappointed. This is terrible!",language:'en',intent:'COMPLAINT',confidence:0.92,safety:'🔴 极高风险',reply:'（历史会话记录）',time:'09-12 11:05'},
+    {input:'我的包裹US2024-3821到哪里了？',language:'zh',intent:'SHIPPING',confidence:0.80,safety:'🟢 低风险',reply:'（历史会话记录）',time:'09-12 13:44'},
+    {input:'我想退货，尺码不合适',language:'zh',intent:'REFUND',confidence:0.72,safety:'🟢 低风险',reply:'（历史会话记录）',time:'09-12 14:10'},
+    {input:'寄到美国运费多少钱？',language:'zh',intent:'FAQ',confidence:0.68,safety:'🟢 低风险',reply:'（历史会话记录）',time:'09-12 14:32'},
+    {input:'我要退款，订单 US2024-4521，收到的耳机有质量问题',language:'zh',intent:'REFUND',confidence:0.90,safety:'🟠 高风险',reply:'（历史会话记录）',time:'09-12 15:21'},
+    {input:'Do you ship to Germany? How long does it take?',language:'en',intent:'SHIPPING',confidence:0.66,safety:'🟢 低风险',reply:'（历史会话记录）',time:'09-13 02:15'},
+    {input:'你们的退货政策是什么？',language:'zh',intent:'FAQ',confidence:0.70,safety:'🟢 低风险',reply:'（历史会话记录）',time:'09-13 09:40'},
+    {input:'退款一般多久到账？',language:'zh',intent:'FAQ',confidence:0.62,safety:'🟡 中风险',reply:'（历史会话记录）',time:'09-13 10:12'},
+    {input:'I want to sue you, this is unacceptable!',language:'en',intent:'COMPLAINT',confidence:0.95,safety:'🔴 极高风险',reply:'（历史会话记录）',time:'09-13 11:58'},
+    {input:'Hi, are you there?',language:'en',intent:'CHITCHAT',confidence:0.55,safety:'🟢 低风险',reply:'（历史会话记录）',time:'09-13 16:02'},
+    {input:'你好，请问有人在吗？',language:'zh',intent:'CHITCHAT',confidence:0.55,safety:'🟢 低风险',reply:'（历史会话记录）',time:'09-13 18:30'},
+  ];
+  const changelog = [
+    {entityType:'kb_item',name:'退换货基本政策',action:'update',operator:'运营-Amy',time:'09-10 15:20'},
+    {entityType:'prompt',name:'跨境电商客服 · 人设主 Prompt',action:'update',operator:'运营-Amy',time:'09-10 11:03'},
+    {entityType:'model',name:'DeepSeek-V3 · 中文线',action:'create',operator:'管理员-Leo',time:'09-09 17:45'},
+    {entityType:'kb_item',name:'加急配送说明',action:'create',operator:'运营-Amy',time:'09-09 10:12'},
+    {entityType:'kb_item',name:'投诉响应时效',action:'update',operator:'运营-Ken',time:'09-08 14:28'},
+  ];
+  return {categories,items,prompts,models,chats,changelog};
+};
+
+/* ══════════════════════════════════════════════════════════════
+   二、状态管理（localStorage 持久化）
+   ══════════════════════════════════════════════════════════════ */
+const LS_KEY = 'shophelper_admin_demo_v1';
+let DB;
+function loadState(){
+  try{ const raw = localStorage.getItem(LS_KEY); if(raw) return JSON.parse(raw);}catch(e){}
+  return null;
+}
+function save(){ localStorage.setItem(LS_KEY, JSON.stringify(DB)); }
+DB = loadState() || SEED();
+if(!loadState()) save();
+
+function nowStr(){
+  const d = new Date(), p = n => String(n).padStart(2,'0');
+  return `${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function addLog(entityType, name, action){
+  DB.changelog.unshift({entityType,name,action,operator:'运营-我',time:nowStr()});
+  DB.changelog = DB.changelog.slice(0,30);
+  save();
+}
+const ACTION_NAME = {create:'新增',update:'修改',delete:'删除'};
+const ENTITY_NAME = {kb_item:'知识库',prompt:'Prompt',model:'模型'};
+
+/* ══════════════════════════════════════════════════════════════
+   三、Agent 引擎（后端 agent_runtime.py 的 JS 移植）
+   ══════════════════════════════════════════════════════════════ */
+const ORDER_PATTERNS = {
+  zh:[/订单/,/我的订单/,/查.*单/,/状态/],
+  en:[/order/,/my order/,/where is my/,/check.*order/,/status/,/order number/],
+};
+const SHIPPING_PATTERNS = {
+  zh:[/物流/,/快递/,/到哪/,/多久到/,/什么时候到/,/跟踪/],
+  en:[/tracking/,/track/,/where is.*package/,/delivery status/,/arrive/,/ship/,/how long/],
+};
+// 退款动作需显式动词（我要/我想/帮我/申请），避免「退货政策是什么」这类政策咨询被误判为退款请求
+const REFUND_PATTERNS = [/refund/,/money back/,/cancel.*order/,/我要退款/,/我想退款/,/我要退货/,/我想退货/,/帮我退/,/申请退款/,/申请退货/,/取消订单/];
+const COMPLAINT_KEYWORDS = ['angry','complaint','terrible','awful','disappointed','bad experience','投诉','生气','糟糕','失望','举报','差评'];
+const CHITCHAT_PATTERNS = [/hi/,/hello/,/hey/,/thanks/,/thank/,/bye/,/good/,/你好/,/谢谢/,/再见/,/嗨/,/早上好/,/晚上好/];
+const RED_KEYWORDS = ['删除账户','delete account','delete my data','sue','lawyer','legal action','投诉到','起诉','律师','法院'];
+const ORANGE_KEYWORDS = ['refund','退款','compensation','赔偿','modify','修改地址'];
+const INTENT_NAMES = {FAQ:'知识库查询',ORDER:'订单查询',SHIPPING:'物流追踪',REFUND:'退款请求',COMPLAINT:'投诉处理',CHITCHAT:'日常闲聊'};
+const INTENT_COLORS = {FAQ:'blue',ORDER:'blue',SHIPPING:'blue',REFUND:'orange',COMPLAINT:'red',CHITCHAT:'gray'};
+const ORDER_NO_RE = /[A-Z]{2}\d{4}-\d{4}/;
+const TRACKING_NO_RE = /[A-Z]{2,3}\d{8,12}/;
+const MOCK_ORDERS = {
+  'US2024-3821':{customer:'Anna Müller',platform:'Shopify',status:'已发货',statusEn:'Shipped',items:"Women's Summer Dress (M, Blue) × 1",total:45.99,created:'2026-06-20',trackingNo:'SF7890123456',carrier:'SF-Intl'},
+  'US2024-4521':{customer:'James Wilson',platform:'Amazon',status:'运输中',statusEn:'In Transit',items:'Bluetooth Earphones × 1',total:29.99,created:'2026-06-19',trackingNo:'DHL9876543210',carrier:'DHL'},
+  'US2024-5100':{customer:'Sophie Martin',platform:'TikTok Shop',status:'已签收',statusEn:'Delivered',items:'Yoga Mat + Resistance Bands Set',total:35.50,created:'2026-06-15',trackingNo:'4PX1122334455',carrier:'4PX'},
+};
+// 意图打分权重：动作类意图（投诉/退款）优先级高于信息类（订单/物流/FAQ）
+const W = {COMPLAINT:10,REFUND:8,ORDER:3,SHIPPING:3,FAQ:3,CHITCHAT:3};
+
+function detectLanguage(text){
+  const zh = (text.match(/[\u4e00-\u9fff]/g)||[]).length;
+  return zh > text.length*0.3 ? 'zh' : 'en';
+}
+function splitKeywords(raw){
+  if(!raw) return [];
+  return raw.split(/[,，、;；\n]/).map(k=>k.trim().toLowerCase()).filter(Boolean);
+}
+function loadKb(){
+  const cats = DB.categories;
+  const catMap = {}; cats.forEach(c=>catMap[c.id]=c);
+  const items = DB.items.filter(i=>i.status==='published' && catMap[i.categoryId]);
+  return {catMap, items};
+}
+function matchKb(items, text, lang){
+  const tl = text.toLowerCase();
+  let best=null, bestScore=0;
+  for(const item of items){
+    let raw = lang==='en' ? item.keywordsEn : item.keywordsZh;
+    let kws = splitKeywords(raw);
+    if(!kws.length) kws = splitKeywords(lang==='en' ? item.keywordsZh : item.keywordsEn);
+    const score = kws.filter(k=>tl.includes(k)).length;
+    if(score>bestScore){bestScore=score;best=item;}
+  }
+  return [best,bestScore];
+}
+function recognizeIntent(text, lang, items){
+  const tl = text.toLowerCase();
+  const op = lang==='zh'?ORDER_PATTERNS.zh:ORDER_PATTERNS.en;
+  const sp = lang==='zh'?SHIPPING_PATTERNS.zh:SHIPPING_PATTERNS.en;
+  let complaintHits = COMPLAINT_KEYWORDS.filter(k=>tl.includes(k)).length;
+  if(RED_KEYWORDS.some(k=>tl.includes(k))) complaintHits += 2; // 法律/删户类风险词计入投诉意图
+  let refundHits = REFUND_PATTERNS.filter(p=>p.test(tl)).length;
+  let orderHits = op.filter(p=>p.test(tl)).length;
+  let shippingHits = sp.filter(p=>p.test(tl)).length;
+  let chitchatHits = CHITCHAT_PATTERNS.filter(p=>p.test(tl)).length;
+  const hasOrderNo = ORDER_NO_RE.test(text);
+  const hasTrackingNo = TRACKING_NO_RE.test(text);
+  if(hasOrderNo && orderHits) orderHits++;
+  if(hasTrackingNo && shippingHits) shippingHits++;
+  const [bestItem, faqHits] = matchKb(items, text, lang);
+  const scores = {COMPLAINT:complaintHits*W.COMPLAINT,REFUND:refundHits*W.REFUND,ORDER:orderHits*W.ORDER,SHIPPING:shippingHits*W.SHIPPING,FAQ:faqHits*W.FAQ,CHITCHAT:chitchatHits*W.CHITCHAT};
+  const maxScore = Math.max(...Object.values(scores));
+  if(maxScore===0){
+    if(hasOrderNo) return {intent:'ORDER',confidence:0.60,bestItem};
+    if(hasTrackingNo) return {intent:'SHIPPING',confidence:0.60,bestItem};
+    return {intent:'FAQ',confidence:0.15,bestItem};
+  }
+  let primary = Object.keys(scores).reduce((a,b)=>scores[b]>scores[a]?b:a);
+  let confidence = Math.min(0.95, 0.40+0.08*scores[primary]);
+  if(primary==='FAQ' && !bestItem) confidence = 0.30;
+  return {intent:primary, confidence:Math.round(confidence*100)/100, bestItem};
+}
+function safetyCheck(intent, userInput, lang){
+  const tl = userInput.toLowerCase();
+  if(RED_KEYWORDS.some(k=>tl.includes(k))){
+    return {level:'🔴 极高风险',action:'escalate',
+      autoReply: lang==='zh'
+        ?'我们非常重视您的反馈。为确保妥善处理，我将为您转接人工客服主管。请稍候...'
+        :"We take your concerns very seriously. I'm escalating this to a human supervisor to ensure it's handled properly. Please hold..."};
+  }
+  if(ORANGE_KEYWORDS.some(k=>tl.includes(k)) && ['REFUND','COMPLAINT'].includes(intent)){
+    return {level:'🟠 高风险',action:'pre_fill_and_escalate',
+      autoReply: lang==='zh'
+        ?'退款请求需要人工审核确认。我已经整理了您的信息，正在转接客服专员。预计等待不超过 2 分钟。'
+        :"Refund requests require human verification. I've prepared your information and am connecting you to a specialist. Estimated wait: under 2 minutes."};
+  }
+  if(intent==='REFUND') return {level:'🟡 中风险',action:'auto_with_review',autoReply:null};
+  return {level:'🟢 低风险',action:'auto',autoReply:null};
+}
+function renderPromptTemplate(scene, mapping){
+  const tpl = DB.prompts.filter(p=>p.scene===scene && p.enabled)
+    .sort((a,b)=>b.version-a.version)[0];
+  if(!tpl || !tpl.content) return null;
+  let c = tpl.content;
+  for(const [k,v] of Object.entries(mapping)) c = c.split('{'+k+'}').join(String(v));
+  return c;
+}
+function runAgent(userInput){
+  const trace = [];
+  const lang = detectLanguage(userInput);
+  trace.push({icon:'🔍',step:'语言检测',detail: lang==='zh'?'检测为 中文':'检测为 English'});
+  const {catMap, items} = loadKb();
+  trace.push({icon:'🗂️',step:'加载配置',detail:`从配置库读取 ${DB.categories.length} 个分类 / ${items.length} 条知识库`});
+  const {intent, confidence, bestItem} = recognizeIntent(userInput, lang, items);
+  trace.push({icon:'🧠',step:'意图识别',detail:`${INTENT_NAMES[intent]} (置信度: ${Math.round(confidence*100)}%)`});
+  const safety = safetyCheck(intent, userInput, lang);
+  trace.push({icon:'🛡️',step:'安全护栏',detail:`风险等级: ${safety.level} → ${safety.action}`});
+  let matchedItem = bestItem, reply='', source='rule_engine';
+  if(safety.autoReply){
+    reply = safety.autoReply;
+  } else if(intent==='FAQ'){
+    if(matchedItem){
+      const cat = catMap[matchedItem.categoryId];
+      const catName = cat ? cat.name : '知识库';
+      const content = lang==='en'?matchedItem.answerEn:matchedItem.answerZh;
+      const title = lang==='en'?matchedItem.titleEn:matchedItem.titleZh;
+      trace.push({icon:'💭',step:'ReAct - 推理',detail:'判断为 FAQ 类问题 → 需检索知识库'});
+      trace.push({icon:'🔧',step:'ReAct - 行动',detail:`🔧 命中知识库条目「${title}」(id=${matchedItem.id}, 分类=${catName})`});
+      trace.push({icon:'👁️',step:'ReAct - 观察',detail:`返回内容 ${content.length} 字`});
+      matchedItem.hitCount = (matchedItem.hitCount||0)+1; save();
+      reply = lang==='zh'
+        ? `📚 以下是关于「${catName}」的详细信息：\n\n${content}\n\n还有其他需要帮您的吗？`
+        : `📚 Here's what I found about "${catName}":\n\n${content}\n\nIs there anything else I can help with?`;
+      source = 'kb_item#'+matchedItem.id;
+    } else {
+      trace.push({icon:'👁️',step:'ReAct - 观察',detail:'未找到匹配知识库条目'});
+      reply = lang==='zh'
+        ? '抱歉，我暂时没有找到相关的信息。需要我帮您转接人工客服吗？'
+        : "I couldn't find relevant information on this. Would you like me to connect you with a human agent?";
+      source = 'no_kb_hit';
+    }
+  } else if(intent==='ORDER'){
+    trace.push({icon:'💭',step:'ReAct - 推理',detail:'判断为订单查询 → 需调用 get_order_info'});
+    const m = userInput.match(ORDER_NO_RE);
+    if(m && MOCK_ORDERS[m[0]]){
+      const o = MOCK_ORDERS[m[0]];
+      const status = lang==='zh'?o.status:o.statusEn;
+      trace.push({icon:'🔧',step:'ReAct - 行动',detail:`🔧 调用 get_order_info(${m[0]})`});
+      trace.push({icon:'👁️',step:'ReAct - 观察',detail:`找到订单，状态: ${status}`});
+      reply = lang==='zh'
+        ? `📋 订单查询结果\n\n订单号：${m[0]}\n下单人：${o.customer}\n平台：${o.platform}\n商品：${o.items}\n金额：$${o.total}\n下单时间：${o.created}\n状态：${status}\n\n还有其他需要帮您的吗？`
+        : `📋 Order Lookup Result\n\nOrder ID: ${m[0]}\nCustomer: ${o.customer}\nPlatform: ${o.platform}\nItems: ${o.items}\nTotal: $${o.total}\nOrder Date: ${o.created}\nStatus: ${status}\n\nAnything else I can help with?`;
+      source = 'get_order_info';
+    } else {
+      trace.push({icon:'👁️',step:'ReAct - 观察',detail:'未检测到有效订单号 → 引导用户提供'});
+      reply = lang==='zh'
+        ? '请提供您的订单号（格式如 US2024-3821），我来帮您查询。\n\n💡 提示：订单号可以在确认邮件中找到。'
+        : "Please provide your order number (format: US2024-3821) and I'll look it up for you.\n\n💡 Tip: You can find your order number in the confirmation email.";
+      source = 'get_order_info_ask';
+    }
+  } else if(intent==='SHIPPING'){
+    trace.push({icon:'💭',step:'ReAct - 推理',detail:'判断为物流追踪 → 需调用 track_package'});
+    reply = lang==='zh'
+      ? '请提供您的物流单号（tracking number），我来帮您查询包裹状态。\n\n💡 物流单号可以在发货确认邮件中找到。'
+      : "Please provide your tracking number and I'll check your package status for you.\n\n💡 You can find the tracking number in your shipping confirmation email.";
+    source = 'track_package_ask';
+  } else if(intent==='REFUND'){
+    trace.push({icon:'💭',step:'ReAct - 推理',detail:'退款/退换货请求 → 先查政策 + 验证订单'});
+    const refundItem = DB.items.find(i=>(i.titleZh||'').includes('退') && (i.titleZh||'').includes('货') && i.status==='published');
+    if(refundItem){
+      trace.push({icon:'🔧',step:'ReAct - 行动',detail:`🔧 调用 search_faq → 命中「${refundItem.titleZh}」`});
+      matchedItem = refundItem;
+    }
+    trace.push({icon:'🛡️',step:'安全护栏',detail:'🟠 高风险操作 → 自动回复 + 加入人工审核队列'});
+    reply = lang==='zh'
+      ? '📋 退款/退换货请求已受理。⚠️ 退款需要人工审核，我已为您提交请求，客服专员将在 24 小时内通过邮件与您联系。'
+      : "📋 Refund/Return Request Submitted. ⚠️ Refunds require human review. I've submitted your request — a specialist will contact you via email within 24 hours.";
+    source = 'refund_flow';
+  } else if(intent==='COMPLAINT'){
+    trace.push({icon:'💭',step:'ReAct - 推理',detail:'投诉/不满情绪 → 安抚 + 升级人工'});
+    trace.push({icon:'🛡️',step:'安全护栏',detail:'🔴 自动升级到人工客服主管'});
+    reply = lang==='zh'
+      ? '非常抱歉给您带来了不好的体验！😔 我已经记录了您的反馈，并为您升级到客服主管处理。\n\n📌 预计 2 小时内会有专员通过邮件与您联系。'
+      : "I'm truly sorry about your experience! 😔 I've logged your feedback and escalated this to a service supervisor.\n\n📌 A specialist will reach out via email within 2 hours.";
+    source = 'complaint_flow';
+  } else { // CHITCHAT
+    trace.push({icon:'💭',step:'ReAct - 推理',detail:'闲聊类 → 无需工具调用，直接回复'});
+    const tl = userInput.toLowerCase();
+    if(lang==='zh'){
+      if(['你好','嗨','早上好','晚上好','您好'].some(g=>tl.includes(g))) reply='您好！👋 我是 ShopHelper，您的跨境电商客服助手。有什么可以帮您的吗？';
+      else if(['谢谢','感谢','多谢'].some(t=>tl.includes(t))) reply='不客气！很高兴能帮到您～ 还有其他问题随时问我哦 😊';
+      else reply='您好！有什么可以帮助您的呢？例如：查订单、查物流、了解退换政策、尺码建议等。';
+    } else {
+      if(['hi','hello','hey','good morning','good evening'].some(g=>tl.includes(g))) reply="Hello! 👋 I'm ShopHelper, your cross-border e-commerce assistant. How can I help you today?";
+      else if(['thanks','thank','appreciate'].some(t=>tl.includes(t))) reply="You're welcome! Glad I could help 😊 Feel free to reach out anytime!";
+      else reply='Hello! How can I assist you? For example: check order status, track a package, learn about return policies, or get size recommendations.';
+    }
+    source = 'chitchat';
+  }
+  const systemPrompt = renderPromptTemplate('system',{language:lang==='zh'?'中文':'English',intent:INTENT_NAMES[intent]});
+  if(systemPrompt) trace.push({icon:'📝',step:'Prompt 装配',detail:`已应用「system」场景 Prompt 模板（${systemPrompt.length} 字）`});
+  DB.chats.push({input:userInput,language:lang,intent,confidence,safety:safety.level,reply,time:nowStr()});
+  DB.chats = DB.chats.slice(-100); save();
+  return {reply,language:lang,intent,intentName:INTENT_NAMES[intent],confidence,safety,
+          matchedItemId:matchedItem?matchedItem.id:null,source,trace};
+}
+
+/* ══════════════════════════════════════════════════════════════
+   四、UI 基础工具
+   ══════════════════════════════════════════════════════════════ */
+const $ = s => document.querySelector(s);
+const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function toast(msg, type){
+  const el = document.createElement('div');
+  el.className = 'toast-item';
+  const color = type==='error'?'var(--red)':type==='warn'?'var(--gold)':'var(--green)';
+  el.innerHTML = `<span style="color:${color}">●</span> ${esc(msg)}`;
+  $('#toast').appendChild(el);
+  setTimeout(()=>el.remove(), 2600);
+}
+function closeModal(){ $('#modal-root').innerHTML=''; }
+function openModal({title, body, okText='确定', onOk, wide=false, hideOk=false}){
+  $('#modal-root').innerHTML = `
+  <div class="modal-mask" onclick="if(event.target===this)closeModal()">
+    <div class="modal ${wide?'wide':''}">
+      <div class="modal-head"><b>${esc(title)}</b><span class="modal-close" onclick="closeModal()">✕</span></div>
+      <div class="modal-body">${body}</div>
+      <div class="modal-foot">
+        <button class="btn" onclick="closeModal()">取消</button>
+        ${hideOk?'':`<button class="btn primary" id="modalOk">${esc(okText)}</button>`}
+      </div>
+    </div>
+  </div>`;
+  if(!hideOk) $('#modalOk').onclick = ()=>{ if(onOk()!==false) closeModal(); };
+}
+
+/* ══════════════════════════════════════════════════════════════
+   五、页面：概览仪表盘
+   ══════════════════════════════════════════════════════════════ */
+function renderDashboard(){
+  const published = DB.items.filter(i=>i.status==='published').length;
+  const draft = DB.items.filter(i=>i.status==='draft').length;
+  const off = DB.items.filter(i=>i.status==='off').length;
+  const intentCnt = {};
+  DB.chats.forEach(c=>intentCnt[c.intent]=(intentCnt[c.intent]||0)+1);
+  const maxIntent = Math.max(1,...Object.values(intentCnt));
+  const topItems = [...DB.items].sort((a,b)=>(b.hitCount||0)-(a.hitCount||0)).slice(0,5);
+  const maxHit = Math.max(1,...topItems.map(i=>i.hitCount||0));
+  const defModel = DB.models.find(m=>m.isDefault);
+  $('#page-dashboard').innerHTML = `
+  <div class="grid stat-grid" style="margin-bottom:16px">
+    <div class="card stat"><div class="num">${DB.items.length}</div><div class="lbl">知识库条目</div>
+      <div class="sub">发布 ${published} · 草稿 ${draft} · 停用 ${off}</div></div>
+    <div class="card stat"><div class="num">${DB.prompts.length}</div><div class="lbl">Prompt 模板</div>
+      <div class="sub">生效 ${DB.prompts.filter(p=>p.enabled).length} 个场景</div></div>
+    <div class="card stat"><div class="num">${DB.models.length}</div><div class="lbl">大模型线路</div>
+      <div class="sub">默认：${defModel?esc(defModel.name.split(' ·')[0]):'未设置'}</div></div>
+    <div class="card stat"><div class="num">${DB.chats.length}</div><div class="lbl">累计对话</div>
+      <div class="sub">含测试台实时会话</div></div>
+  </div>
+  <div class="grid" style="grid-template-columns:1fr 1fr;margin-bottom:16px">
+    <div class="card"><h3>意图分布（最近会话）</h3>
+      ${Object.keys(INTENT_NAMES).map(k=>{
+        const v = intentCnt[k]||0;
+        return `<div class="bar-row"><span>${INTENT_NAMES[k]}</span>
+        <div class="bar-track"><div class="bar-fill" style="width:${v/maxIntent*100}%"></div></div>
+        <span class="v">${v}</span></div>`;}).join('')}
+    </div>
+    <div class="card"><h3>知识库命中 TOP 5</h3>
+      ${topItems.map(i=>`<div class="bar-row"><span title="${esc(i.titleZh)}" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(i.titleZh)}</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${(i.hitCount||0)/maxHit*100}%"></div></div>
+      <span class="v">${i.hitCount||0}</span></div>`).join('')}
+    </div>
+  </div>
+  <div class="grid" style="grid-template-columns:1fr 1fr">
+    <div class="card"><h3>最近配置变更</h3>
+      <div class="tl">${DB.changelog.slice(0,6).map(l=>`
+        <div class="tl-item"><div class="t">${esc(l.time)} · ${esc(l.operator)} · ${ACTION_NAME[l.action]||l.action}了${ENTITY_NAME[l.entityType]||l.entityType}</div>
+        <div class="d">${esc(l.name)}</div></div>`).join('')}</div>
+    </div>
+    <div class="card"><h3>模型路由状态</h3>
+      ${DB.models.map(m=>`<div style="display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px dashed #f0f0f0;font-size:13px">
+        <span>${esc(m.name)} ${m.isDefault?'<span class="tag blue">默认</span>':''}</span>
+        <span class="tag ${m.routeLang==='en'?'blue':m.routeLang==='zh'?'green':'gray'}">${{en:'英文线',zh:'中文线',all:'兜底'}[m.routeLang]}</span>
+      </div>`).join('')}
+      <p style="font-size:12px;color:var(--muted);margin-top:12px">💡 换模型只改配置不碰代码（OpenAI 兼容协议）</p>
+    </div>
+  </div>`;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   六、页面：知识库管理
+   ══════════════════════════════════════════════════════════════ */
+let kbCat = 0; // 0=全部
+let kbSearch = '';
+function renderKnowledge(){
+  const cats = DB.categories;
+  const items = DB.items.filter(i =>
+    (kbCat===0 || i.categoryId===kbCat) &&
+    (!kbSearch || (i.titleZh+i.titleEn+i.keywordsZh+i.keywordsEn).toLowerCase().includes(kbSearch.toLowerCase())));
+  $('#page-knowledge').innerHTML = `
+  <div class="hint-bar">💡 <b>配置驱动演示</b>：修改任意一条知识库答案后，去「Agent 测试台」问同样的问题，回复将立即变化 —— 无需重启、无需发版。</div>
+  <div class="kb-layout">
+    <div class="card">
+      <h3>分类（${cats.length}）</h3>
+      <div class="cat-item ${kbCat===0?'active':''}" onclick="kbCat=0;renderKnowledge()">
+        <span>🗂️ 全部条目</span><span class="cnt">${DB.items.length}</span></div>
+      ${cats.map(c=>`<div class="cat-item ${kbCat===c.id?'active':''}" onclick="kbCat=${c.id};renderKnowledge()">
+        <span>${c.icon} ${esc(c.name)}</span><span class="cnt">${DB.items.filter(i=>i.categoryId===c.id).length}</span></div>`).join('')}
+    </div>
+    <div class="card">
+      <div class="toolbar">
+        <input type="text" placeholder="🔍 搜索标题 / 关键词…" value="${esc(kbSearch)}"
+          oninput="kbSearch=this.value;clearTimeout(window._kbT);window._kbT=setTimeout(renderKnowledge,250)">
+        <button class="btn" onclick="openSearchTest()">🧪 检索测试</button>
+        <span style="flex:1"></span>
+        <button class="btn primary" onclick="editKbItem()">＋ 新增条目</button>
+      </div>
+      <table><thead><tr>
+        <th>状态</th><th>标题（中 / 英）</th><th>命中</th><th>操作</th>
+      </tr></thead><tbody>
+      ${items.length?items.map(i=>{
+        const cat = DB.categories.find(c=>c.id===i.categoryId);
+        const st = i.status==='published'?'<span class="tag green">已发布</span>':i.status==='draft'?'<span class="tag gold">草稿</span>':'<span class="tag gray">已停用</span>';
+        return `<tr>
+        <td>${st}</td>
+        <td><b>${esc(i.titleZh)}</b><br><span style="color:var(--muted);font-size:12px">${esc(i.titleEn)} · ${cat?cat.icon+' '+esc(cat.name):''}</span></td>
+        <td>${i.hitCount||0}</td>
+        <td style="white-space:nowrap">
+          <button class="btn mini" onclick="editKbItem(${i.id})">编辑</button>
+          <button class="btn mini" onclick="toggleKbStatus(${i.id})">${i.status==='published'?'停用':'发布'}</button>
+          <button class="btn mini danger" onclick="delKbItem(${i.id})">删除</button>
+        </td></tr>`;}).join(''):`<tr><td colspan="4" class="empty">暂无匹配条目</td></tr>`}
+      </tbody></table>
+    </div>
+  </div>`;
+}
+function editKbItem(id){
+  const it = id ? DB.items.find(i=>i.id===id) : null;
+  openModal({
+    title: it?'编辑知识库条目':'新增知识库条目', okText:'保存', wide:true,
+    body:`
+    <div class="form-2col">
+      <div class="form-row"><label>所属分类</label>
+        <select id="f_cat">${DB.categories.map(c=>`<option value="${c.id}" ${it&&it.categoryId===c.id?'selected':''}>${c.icon} ${esc(c.name)}</option>`).join('')}</select></div>
+      <div class="form-row"><label>状态</label>
+        <select id="f_status">
+          <option value="published" ${it&&it.status==='published'?'selected':''}>已发布（Agent 可用）</option>
+          <option value="draft" ${it&&it.status==='draft'?'selected':''}>草稿</option>
+          <option value="off" ${it&&it.status==='off'?'selected':''}>已停用</option>
+        </select></div>
+    </div>
+    <div class="form-2col">
+      <div class="form-row"><label>标题（中文）</label><input type="text" id="f_tzh" value="${esc(it?it.titleZh:'')}"></div>
+      <div class="form-row"><label>标题（English）</label><input type="text" id="f_tzh2" value="${esc(it?it.titleEn:'')}"></div>
+    </div>
+    <div class="form-row"><label>答案（中文）</label><textarea id="f_azh" rows="5">${esc(it?it.answerZh:'')}</textarea></div>
+    <div class="form-row"><label>答案（English）</label><textarea id="f_aen" rows="5">${esc(it?it.answerEn:'')}</textarea></div>
+    <div class="form-2col">
+      <div class="form-row"><label>关键词（中文，逗号分隔）</label><input type="text" id="f_kzh" value="${esc(it?it.keywordsZh:'')}"></div>
+      <div class="form-row"><label>关键词（English，逗号分隔）</label><input type="text" id="f_ken" value="${esc(it?it.keywordsEn:'')}"></div>
+    </div>`,
+    onOk(){
+      const tzh = $('#f_tzh').value.trim();
+      if(!tzh){toast('标题（中文）不能为空','error');return false;}
+      const data = {
+        categoryId:+$('#f_cat').value, status:$('#f_status').value,
+        titleZh:tzh, titleEn:$('#f_tzh2').value.trim(),
+        answerZh:$('#f_azh').value, answerEn:$('#f_aen').value,
+        keywordsZh:$('#f_kzh').value, keywordsEn:$('#f_ken').value,
+      };
+      if(it){ Object.assign(it,data); addLog('kb_item',it.titleZh,'update'); toast('已保存，「Agent 测试台」立即生效'); }
+      else{
+        const nid = Math.max(0,...DB.items.map(i=>i.id))+1;
+        DB.items.push({id:nid,hitCount:0,...data});
+        addLog('kb_item',tzh,'create'); toast('新增成功，Agent 已可检索到该条目');
+      }
+      save(); renderKnowledge(); renderDashboard();
+    }
+  });
+}
+function toggleKbStatus(id){
+  const it = DB.items.find(i=>i.id===id);
+  it.status = it.status==='published'?'off':'published';
+  addLog('kb_item',it.titleZh,'update');
+  save(); renderKnowledge(); toast(it.status==='published'?'已发布，Agent 立即可用':'已停用，Agent 不再检索');
+}
+function delKbItem(id){
+  const it = DB.items.find(i=>i.id===id);
+  openModal({title:'删除确认',okText:'确认删除',
+    body:`<p>确定删除知识库条目「<b>${esc(it.titleZh)}</b>」吗？<br><span style="color:var(--muted);font-size:12px">删除后 Agent 将无法检索到该条目。</span></p>`,
+    onOk(){
+      DB.items = DB.items.filter(i=>i.id!==id);
+      addLog('kb_item',it.titleZh,'delete');
+      save(); renderKnowledge(); renderDashboard(); toast('已删除');
+    }});
+}
+function openSearchTest(){
+  openModal({title:'🔍 知识库检索测试', okText:'执行检索', wide:true,
+    body:`
+    <div class="form-row"><label>输入用户问题（模拟 Agent 端的检索过程）</label>
+      <input type="text" id="st_q" placeholder="例如：你们的加急配送怎么收费？多久能到？"></div>
+    <div id="st_result"></div>`,
+    onOk(){
+      const q = $('#st_q').value.trim();
+      if(!q){toast('请输入测试问题','warn');return false;}
+      const lang = detectLanguage(q);
+      const {items} = loadKb();
+      const [best,score] = matchKb(items,q,lang);
+      const {intent,confidence} = recognizeIntent(q,lang,items);
+      const kws = best ? splitKeywords(lang==='en'?best.keywordsEn:best.keywordsZh).filter(k=>q.toLowerCase().includes(k)) : [];
+      $('#st_result').innerHTML = `
+      <div style="border:1px solid var(--border);border-radius:8px;padding:14px;margin-top:6px">
+        <p style="font-size:12px;color:var(--muted);margin-bottom:10px">语言: ${lang==='zh'?'中文':'English'} · 判定意图: <span class="tag ${INTENT_COLORS[intent]}">${INTENT_NAMES[intent]}</span> 置信度 ${Math.round(confidence*100)}%</p>
+        ${best?`
+        <p><b>✅ 命中条目：</b>${esc(lang==='en'?best.titleEn:best.titleZh)} <span class="tag green">得分 ${score}</span></p>
+        <p style="font-size:12px;color:var(--muted);margin:7px 0">命中关键词：${kws.map(k=>`<span class="tag blue">${esc(k)}</span>`).join(' ')||'（无关键词命中）'}</p>
+        <div style="background:#fafafa;border-radius:6px;padding:11px;font-size:13px;white-space:pre-wrap;max-height:200px;overflow:auto">${esc(lang==='en'?best.answerEn:best.answerZh)}</div>`
+        :'<p class="empty">❌ 未命中任何已发布条目 —— Agent 将引导转人工或补充新条目</p>'}
+      </div>`;
+      return false; // 保持弹窗打开，便于反复测试
+    }});
+}
+
+/* ══════════════════════════════════════════════════════════════
+   七、页面：Prompt 管理
+   ══════════════════════════════════════════════════════════════ */
+const SCENE_NAMES = {system:'人设 System',faq:'FAQ 话术',refund:'退款话术',complaint:'投诉话术'};
+function renderPrompts(){
+  $('#page-prompts').innerHTML = `
+  <div class="hint-bar">💡 每次保存生成一个<b>版本快照</b>，可随时回滚；「人设主 Prompt」会在测试台每次对话中被读取装配（见 Trace 最后一步）。</div>
+  <div class="grid" style="grid-template-columns:1fr 1fr">
+  ${DB.prompts.map(p=>`
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+        <div><b>${esc(p.name)}</b><br>
+          <span style="font-size:12px;color:var(--muted)">${SCENE_NAMES[p.scene]||p.scene} · v${p.version} ${p.enabled?'<span class="tag green">生效中</span>':'<span class="tag gray">已停用'}</span></span></div>
+        <div style="white-space:nowrap">
+          <button class="btn mini" onclick="editPrompt(${p.id})">编辑</button>
+          <button class="btn mini" onclick="promptVersions(${p.id})">版本历史</button>
+        </div>
+      </div>
+      <div style="background:#fafafa;border-radius:6px;padding:11px;font-family:Consolas,monospace;font-size:12px;white-space:pre-wrap;max-height:150px;overflow:auto;line-height:1.6">${esc(p.content)}</div>
+      <div style="display:flex;justify-content:space-between;margin-top:10px;align-items:center">
+        <span style="font-size:12px;color:var(--muted)">${p.variables?'变量: '+esc(p.variables.split(',').map(v=>'{' +v.trim()+'}').join(' ')):'无变量'}</span>
+        <div>
+          <button class="btn mini" onclick="previewPrompt(${p.id})">渲染预览</button>
+          <button class="btn mini" onclick="togglePrompt(${p.id})">${p.enabled?'停用':'启用'}</button>
+        </div>
+      </div>
+    </div>`).join('')}
+  </div>`;
+}
+function editPrompt(id){
+  const p = DB.prompts.find(x=>x.id===id);
+  openModal({title:'编辑 Prompt（保存将生成新版本）', okText:'保存新版本', wide:true,
+    body:`
+    <div class="form-row"><label>备注（本次修改说明）</label><input type="text" id="p_note" placeholder="例如：调整退款话术语气"></div>
+    <div class="form-row"><label>内容 ${p.variables?`（变量：${esc(p.variables)}）`:''}</label>
+      <textarea id="p_content" rows="14" style="font-family:Consolas,monospace">${esc(p.content)}</textarea></div>`,
+    onOk(){
+      const content = $('#p_content').value;
+      if(!content.trim()){toast('内容不能为空','error');return false;}
+      if(content===p.content){toast('内容未变化，未生成新版本','warn');return;}
+      p.version += 1;
+      p.content = content;
+      p.versions.push({version:p.version,note:$('#p_note').value.trim()||'无备注',operator:'运营-我',time:nowStr()});
+      addLog('prompt',p.name,'update');
+      save(); renderPrompts(); toast(`已保存为 v${p.version} 并即时生效`);
+    }});
+}
+function promptVersions(id){
+  const p = DB.prompts.find(x=>x.id===id);
+  const vs = [...p.versions].reverse();
+  openModal({title:`版本历史 · ${p.name}`, okText:'关闭', hideOkClose:true, wide:true,
+    body: vs.map((v,i)=>`
+    <div style="border:1px solid var(--border);border-radius:8px;padding:13px;margin-bottom:11px;${v.version===p.version?'border-color:var(--primary);background:var(--primary-bg)':''}">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px">
+        <b>v${v.version} ${v.version===p.version?'<span class="tag blue">当前生效</span>':''}</b>
+        ${v.version!==p.version?`<button class="btn mini" onclick="rollbackPrompt(${p.id},${v.version})">回滚到此版本</button>`:''}
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:7px">${esc(v.time)} · ${esc(v.operator)} · ${esc(v.note)}</div>
+      <div style="background:#fafafa;border-radius:6px;padding:10px;font-family:Consolas,monospace;font-size:12px;white-space:pre-wrap;max-height:130px;overflow:auto">${esc(v.content)}</div>
+    </div>`).join(''),
+    onOk(){}});
+}
+function rollbackPrompt(id, version){
+  const p = DB.prompts.find(x=>x.id===id);
+  const v = p.versions.find(x=>x.version===version);
+  p.version += 1;
+  p.content = v.content;
+  p.versions.push({version:p.version,note:`回滚至 v${version}`,operator:'运营-我',time:nowStr()});
+  addLog('prompt',p.name,'update');
+  save(); closeModal(); renderPrompts(); toast(`已回滚到 v${version} 的内容（现为 v${p.version}）`);
+}
+function togglePrompt(id){
+  const p = DB.prompts.find(x=>x.id===id);
+  p.enabled = !p.enabled;
+  addLog('prompt',p.name,'update');
+  save(); renderPrompts(); toast(p.enabled?'已启用，即时生效':'已停用');
+}
+function previewPrompt(id){
+  const p = DB.prompts.find(x=>x.id===id);
+  const vars = p.variables ? p.variables.split(',').map(v=>v.trim()).filter(Boolean) : [];
+  if(!vars.length){
+    openModal({title:'渲染预览（无变量）',okText:'关闭',hideOk:true,
+      body:`<div style="background:#fafafa;border-radius:6px;padding:13px;white-space:pre-wrap;font-size:13px">${esc(p.content)}</div>`,onOk(){}});
+    return;
+  }
+  openModal({title:'渲染预览', okText:'渲染',
+    body: vars.map(v=>`<div class="form-row"><label>变量 {${esc(v)}}</label><input type="text" id="pv_${esc(v)}" value="${v==='language'?'中文':v==='intent'?'退款请求':v==='category'?'物流运费':v==='kb_content'?'（知识库内容…）':v==='order_id'?'US2024-4521':''}"></div>`).join('')
+      + `<div id="pv_result"></div>`,
+    onOk(){
+      let out = p.content;
+      vars.forEach(v=>{ out = out.split('{'+v+'}').join($('#pv_'+v).value); });
+      $('#pv_result').innerHTML = `<div style="background:#fafafa;border-radius:6px;padding:13px;white-space:pre-wrap;font-size:13px;margin-top:8px">${esc(out)}</div>`;
+      return false;
+    }});
+}
+
+/* ══════════════════════════════════════════════════════════════
+   八、页面：大模型接入
+   ══════════════════════════════════════════════════════════════ */
+const ROUTE_NAMES = {en:'英文线路',zh:'中文线路',all:'兜底线路'};
+function renderModels(){
+  $('#page-models').innerHTML = `
+  <div class="hint-bar">💡 所有线路统一走 <b>OpenAI 兼容协议</b>，换模型 = 改配置，不动代码。演示版不真实调用 API，仅管理配置。</div>
+  <div class="grid model-grid">
+  ${DB.models.map(m=>`
+    <div class="card model-card">
+      <div class="mc-head">
+        <b>${esc(m.name)}</b>
+        ${m.isDefault?'<span class="tag blue">默认线路</span>':''}
+      </div>
+      <div class="mc-row"><span class="k">供应商</span><span class="v">${esc(m.provider)} · ${esc(m.modelName)}</span></div>
+      <div class="mc-row"><span class="k">Endpoint</span><span class="v" style="word-break:break-all">${esc(m.baseUrl)}</span></div>
+      <div class="mc-row"><span class="k">API Key</span><span class="v">${esc(m.apiKey)}</span></div>
+      <div class="mc-row"><span class="k">参数</span><span class="v">
+        <span class="tag gray">temp ${m.temperature}</span>
+        <span class="tag gray">max_tokens ${m.maxTokens}</span>
+        <span class="tag gray">top_p ${m.topP}</span></span></div>
+      <div class="mc-row"><span class="k">路由</span><span class="v"><span class="tag ${m.routeLang==='en'?'blue':m.routeLang==='zh'?'green':'gold'}">${ROUTE_NAMES[m.routeLang]}</span></span></div>
+      <div class="mc-row"><span class="k">备注</span><span class="v">${esc(m.remark)}</span></div>
+      <div class="mc-actions">
+        <button class="btn mini" onclick="editModel(${m.id})">编辑</button>
+        ${m.isDefault?'':`<button class="btn mini" onclick="setDefaultModel(${m.id})">设为默认</button>`}
+        <button class="btn mini" onclick="testModel(${m.id},this)">⚡ 连通性测试</button>
+      </div>
+      <div class="test-result" id="tr_${m.id}"></div>
+    </div>`).join('')}
+    <div class="card" style="display:flex;align-items:center;justify-content:center;border:1px dashed var(--border);cursor:pointer;min-height:220px;color:var(--muted)" onclick="editModel()">
+      ＋ 新增模型线路</div>
+  </div>`;
+}
+function editModel(id){
+  const m = id ? DB.models.find(x=>x.id===id) : null;
+  openModal({title: m?'编辑模型线路':'新增模型线路', okText:'保存',
+    body:`
+    <div class="form-row"><label>线路名称</label><input type="text" id="m_name" value="${esc(m?m.name:'')}"></div>
+    <div class="form-2col">
+      <div class="form-row"><label>供应商</label><input type="text" id="m_prov" value="${esc(m?m.provider:'')}"></div>
+      <div class="form-row"><label>模型 ID</label><input type="text" id="m_model" value="${esc(m?m.modelName:'')}"></div>
+    </div>
+    <div class="form-row"><label>Base URL（OpenAI 兼容）</label><input type="text" id="m_url" value="${esc(m?m.baseUrl:'')}"></div>
+    <div class="form-row"><label>API Key</label><input type="password" id="m_key" value="${esc(m?m.apiKey:'')}"></div>
+    <div class="form-2col">
+      <div class="form-row"><label>temperature</label><input type="number" id="m_temp" step="0.1" min="0" max="2" value="${m?m.temperature:0.3}"></div>
+      <div class="form-row"><label>max_tokens</label><input type="number" id="m_mt" value="${m?m.maxTokens:1024}"></div>
+    </div>
+    <div class="form-2col">
+      <div class="form-row"><label>top_p</label><input type="number" id="m_tp" step="0.1" min="0" max="1" value="${m?m.topP:1}"></div>
+      <div class="form-row"><label>路由语言</label>
+        <select id="m_route">
+          <option value="en" ${m&&m.routeLang==='en'?'selected':''}>英文线路（en）</option>
+          <option value="zh" ${m&&m.routeLang==='zh'?'selected':''}>中文线路（zh）</option>
+          <option value="all" ${m&&m.routeLang==='all'?'selected':''}>兜底线路（all）</option>
+        </select></div>
+    </div>
+    <div class="form-row"><label>备注</label><input type="text" id="m_remark" value="${esc(m?m.remark:'')}"></div>`,
+    onOk(){
+      const name = $('#m_name').value.trim();
+      if(!name){toast('线路名称不能为空','error');return false;}
+      const data = {
+        name, provider:$('#m_prov').value.trim(), modelName:$('#m_model').value.trim(),
+        baseUrl:$('#m_url').value.trim(), apiKey:$('#m_key').value,
+        temperature:+$('#m_temp').value, maxTokens:+$('#m_mt').value|0, topP:+$('#m_tp').value,
+        routeLang:$('#m_route').value, remark:$('#m_remark').value,
+      };
+      if(m){ Object.assign(m,data); addLog('model',m.name,'update'); toast('模型配置已保存'); }
+      else{
+        const nid = Math.max(0,...DB.models.map(x=>x.id))+1;
+        DB.models.push({id:nid,isDefault:false,...data});
+        addLog('model',name,'create'); toast('新增模型线路成功');
+      }
+      save(); renderModels(); renderDashboard();
+    }});
+}
+function setDefaultModel(id){
+  DB.models.forEach(m=>m.isDefault = m.id===id);
+  const m = DB.models.find(x=>x.id===id);
+  addLog('model',m.name,'update');
+  save(); renderModels(); renderDashboard(); toast(`已将「${m.name}」设为默认线路`);
+}
+function testModel(id, btn){
+  const m = DB.models.find(x=>x.id===id);
+  const box = $('#tr_'+id);
+  btn.disabled = true; btn.textContent = '测试中…';
+  box.style.display='block';
+  box.style.background='var(--primary-bg)';
+  box.textContent = `⏳ 正在连接 ${m.baseUrl} …`;
+  setTimeout(()=>{
+    const latency = 180 + Math.floor(Math.random()*280);
+    box.style.background='var(--green-bg)';
+    box.innerHTML = `✅ 连通正常 · ${esc(m.modelName)} 响应 OK · 延迟 ${latency}ms<br><span style="color:var(--muted)">（演示版为模拟结果；生产版此处真实调用 /chat/completions）</span>`;
+    btn.disabled=false; btn.textContent='⚡ 连通性测试';
+  }, 900);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   九、页面：Agent 测试台
+   ══════════════════════════════════════════════════════════════ */
+const SCENARIOS = [
+  {label:'🇺🇸 订单查询',text:"What's the status of my order US2024-3821?"},
+  {label:'🇺🇸 退货政策',text:"What's your return policy? Can I return if I don't like the color?"},
+  {label:'🇺🇸 尺码咨询',text:"I'm not sure about sizing. What size should I get if I usually wear M?"},
+  {label:'🇺🇸 物流追踪',text:'Where is my package with tracking number DHL9876543210?'},
+  {label:'🇨🇳 物流运费',text:'寄到美国运费多少钱？'},
+  {label:'🇨🇳 加急配送',text:'你们的加急配送怎么收费？多久能到？'},
+  {label:'🇨🇳 退货请求',text:'我想退货，尺码不合适'},
+  {label:'🇨🇳 投诉场景',text:'你们的东西太糟糕了，我要投诉！'},
+  {label:'🔴 法律风险',text:'I want to sue you, this is unacceptable!'},
+];
+let chatMsgs = [];
+let lastResult = null;
+function renderPlayground(){
+  $('#page-playground').innerHTML = `
+  <div class="pg-layout">
+    <div class="card">
+      <div class="chat-box" id="chatBox">
+        ${chatMsgs.length ? chatMsgs.map(m=>msgHtml(m)).join('')
+          : '<div class="empty">与 Agent 开始对话 —— 每轮回复展示 ReAct 推理链 Trace 与配置溯源</div>'}
+      </div>
+      <div class="chips">${SCENARIOS.map((s,i)=>`<span class="chip" onclick="fillScenario(${i})">${esc(s.label)}</span>`).join('')}</div>
+      <div class="chat-input">
+        <input type="text" id="pgInput" placeholder="输入用户消息，回车发送…" onkeydown="if(event.key==='Enter')sendMsg()">
+        <button class="btn primary" onclick="sendMsg()">发送 ➤</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3>🔎 运行分析（Trace 回放）</h3>
+      <div id="analysis"><div class="empty">发送消息后展示<br>意图 / 置信度 / 安全等级 / 命中配置 / ReAct 步骤</div></div>
+    </div>
+  </div>`;
+  const box = $('#chatBox'); if(box) box.scrollTop = box.scrollHeight;
+}
+function msgHtml(m){
+  if(m.role==='user') return `<div class="msg user"><div class="who">🧑 顾客</div><div class="bubble">${esc(m.text)}</div></div>`;
+  return `<div class="msg bot"><div class="who">🤖 ShopHelper</div><div class="bubble">${esc(m.text)}</div></div>`;
+}
+function fillScenario(i){ $('#pgInput').value = SCENARIOS[i].text; $('#pgInput').focus(); }
+function sendMsg(){
+  const input = $('#pgInput');
+  const text = input.value.trim();
+  if(!text) return;
+  input.value='';
+  chatMsgs.push({role:'user',text});
+  const r = runAgent(text);
+  chatMsgs.push({role:'bot',text:r.reply});
+  lastResult = r;
+  renderPlayground();
+  renderAnalysis();
+  renderDashboard();
+}
+function renderAnalysis(){
+  const r = lastResult;
+  if(!r){ return; }
+  const matched = r.matchedItemId ? DB.items.find(i=>i.id===r.matchedItemId) : null;
+  const safetyColor = r.safety.level.includes('极高')?'red':r.safety.level.includes('高')?'orange':r.safety.level.includes('中')?'gold':'green';
+  $('#analysis').innerHTML = `
+  <div class="meta-grid">
+    <div><span class="k">意图</span><br><span class="tag ${INTENT_COLORS[r.intent]}">${esc(r.intentName)}</span></div>
+    <div><span class="k">置信度</span><br><b>${Math.round(r.confidence*100)}%</b></div>
+    <div><span class="k">语言</span><br><b>${r.language==='zh'?'中文 🇨🇳':'English 🇺🇸'}</b></div>
+    <div><span class="k">安全等级</span><br><span class="tag ${safetyColor}">${esc(r.safety.level)}</span></div>
+    <div><span class="k">护栏动作</span><br><b>${esc(r.safety.action)}</b></div>
+    <div><span class="k">回复来源</span><br><b style="font-size:12px">${esc(r.source)}</b></div>
+  </div>
+  ${matched?`<div style="border:1px solid #b7eb8f;background:var(--green-bg);border-radius:8px;padding:10px 12px;margin-bottom:13px;font-size:12px">
+    ✅ 命中知识库 <b>#${matched.id} ${esc(matched.titleZh)}</b><br>
+    <span style="color:var(--muted)">—— 该条目由运营在「知识库管理」维护，修改后即时生效</span></div>`:''}
+  <div style="font-size:12px;color:var(--muted);margin-bottom:7px">ReAct 推理链（${r.trace.length} 步）：</div>
+  ${r.trace.map(t=>`<div class="trace-step"><span class="ico">${t.icon}</span><span class="s">${esc(t.step)}</span><span>${esc(t.detail)}</span></div>`).join('')}`;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   十、路由与初始化
+   ══════════════════════════════════════════════════════════════ */
+const PAGES = {
+  dashboard:['概览仪表盘','配置资产总览 · 意图分布 · 命中热点 · 变更审计'],
+  knowledge:['知识库管理','中英双语条目增删改查 · 状态管理 · 检索测试（配置驱动）'],
+  prompts:['Prompt 管理','人设与场景话术 · 版本快照 · 回滚 · 渲染预览'],
+  models:['大模型接入','OpenAI 兼容 · 多线路路由 · 参数与连通性管理'],
+  playground:['Agent 测试台','实时对话 · ReAct Trace 回放 · 配置溯源'],
+};
+const RENDER = {dashboard:renderDashboard,knowledge:renderKnowledge,prompts:renderPrompts,models:renderModels,playground:renderPlayground};
+function go(page){
+  document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.page===page));
+  document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.id==='page-'+page));
+  $('#pageTitle').textContent = PAGES[page][0];
+  $('#pageDesc').textContent = PAGES[page][1];
+  RENDER[page]();
+}
+document.querySelectorAll('#nav a').forEach(a=>a.onclick=()=>go(a.dataset.page));
+$('#resetBtn').onclick = ()=>{
+  openModal({title:'重置演示数据',okText:'确认重置',
+    body:'<p>将清空你在本浏览器中的所有修改（知识库 / Prompt / 模型 / 会话），恢复到初始演示数据。</p>',
+    onOk(){ localStorage.removeItem(LS_KEY); DB = SEED(); save(); chatMsgs=[]; lastResult=null; go('dashboard'); toast('演示数据已重置'); }});
+};
+go('dashboard');
+</script>
+</body>
+</html>
