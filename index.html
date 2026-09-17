@@ -12,6 +12,8 @@
   · 数据内嵌 + localStorage 持久化（右上角可一键重置演示数据）
   · Agent 引擎为后端 agent_runtime.py 的 1:1 JS 移植（意图打分 /
     四级安全护栏 / ReAct Trace / 配置驱动）
+  · v2.0 飞轮闭环：意图管理（配置化引擎）/ 对话日志监控 / 标注回流 /
+    测评集管理（一键回归）—— 坏例→资产→回归 全链路闭环
   · 完整前后端分离版（React+AntD / FastAPI+SQLAlchemy）见项目源码
   ════════════════════════════════════════════════════════════════
 -->
@@ -153,10 +155,14 @@ textarea{resize:vertical;line-height:1.6}
       <a data-page="prompts">📝 Prompt 管理</a>
       <a data-page="models">🤖 大模型接入</a>
       <a data-page="playground">🧪 Agent 测试台</a>
+      <a data-page="intents">🎯 意图管理</a>
+      <a data-page="logs">📋 对话日志监控</a>
+      <a data-page="annotate">♻️ 标注与回流</a>
+      <a data-page="evals">✅ 测评集管理</a>
     </nav>
     <div class="sidebar-foot">
       <button id="resetBtn">↺ 重置演示数据</button>
-      <p>单文件离线版 v1.0<br>数据存于浏览器本地</p>
+      <p>单文件离线版 v2.0（飞轮闭环）<br>数据存于浏览器本地</p>
     </div>
   </aside>
   <main>
@@ -166,6 +172,10 @@ textarea{resize:vertical;line-height:1.6}
     <section id="page-prompts" class="page"></section>
     <section id="page-models" class="page"></section>
     <section id="page-playground" class="page"></section>
+    <section id="page-intents" class="page"></section>
+    <section id="page-logs" class="page"></section>
+    <section id="page-annotate" class="page"></section>
+    <section id="page-evals" class="page"></section>
   </main>
 </div>
 <div id="modal-root"></div>
@@ -265,6 +275,64 @@ const SEED = () => {
     {id:3,name:'Qwen-Max · 兜底策略',provider:'qwen',baseUrl:'https://dashscope.aliyuncs.com/compatible-mode/v1',apiKey:'sk-********************',
      modelName:'qwen-max',temperature:0.3,maxTokens:1024,topP:1.0,routeLang:'all',isDefault:false,remark:'英文线异常时的兜底模型'},
   ];
+  // 意图配置：关键词/权重/启停全部配置化（原硬编码在引擎中，v2.0 移入配置层）
+  // 顺序即同分优先级：动作类 > 信息类；FAQ 得分来自知识库命中数（动态计算）
+  const intents = [
+    {id:1,key:'COMPLAINT',name:'投诉处理',color:'red',weight:10,enabled:true,
+     keywordsZh:'投诉,生气,糟糕,失望,举报,差评,删除账户,删除我的账户',
+     keywordsEn:'angry,complaint,terrible,awful,disappointed,bad experience,sue,lawyer,legal action,delete account,delete my data',
+     desc:'动作类 · 命中即安抚并升级人工'},
+    {id:2,key:'REFUND',name:'退款请求',color:'orange',weight:8,enabled:true,
+     keywordsZh:'我要退款,我想退款,我要退货,我想退货,帮我退,申请退款,申请退货,取消订单',
+     keywordsEn:'refund,money back,cancel',
+     desc:'显式退款/退货行为（政策咨询不触发）'},
+    {id:3,key:'ORDER',name:'订单查询',color:'blue',weight:3,enabled:true,
+     keywordsZh:'订单,查单,状态',
+     keywordsEn:'order,my order,check order,status,order number',
+     desc:'触发 get_order_info 工具调用'},
+    {id:4,key:'FAQ',name:'知识库查询',color:'blue',weight:3,enabled:true,
+     keywordsZh:'',keywordsEn:'',
+     desc:'得分 = 知识库关键词命中数（动态）'},
+    {id:5,key:'SHIPPING',name:'物流追踪',color:'blue',weight:3,enabled:true,
+     keywordsZh:'物流,快递,到哪,多久到,什么时候到,跟踪',
+     keywordsEn:'tracking,track,tracking number,where is my package,delivery status,arrive,ship,how long',
+     desc:'触发 track_package 工具调用'},
+    {id:6,key:'CHITCHAT',name:'日常闲聊',color:'gray',weight:3,enabled:true,
+     keywordsZh:'你好,您好,谢谢,再见,嗨,早上好,晚上好',
+     keywordsEn:'hi,hello,hey,thanks,thank,bye,good morning,good evening',
+     desc:'无工具调用，直接应答'},
+  ];
+  // 模拟线上会话（含 2 个待标注坏例：知识未命中 / 意图误判）
+  const sessions = [
+    {id:1,channel:'online',language:'en',input:"What's the status of my order US2024-3821?",intent:'ORDER',confidence:0.95,safety:'🟢 低风险',reply:'📋 Order Lookup Result\nOrder US2024-3821 · Women\'s Summer Dress (M, Blue) × 1 · Shipped via SF-Intl',source:'get_order_info',kbHit:null,status:'reviewed',annotation:{type:'good',note:'意图与回复均正确',time:'09-14 10:02'},trace:null,time:'09-14 08:31'},
+    {id:2,channel:'online',language:'en',input:'Where is my package? Tracking DHL9876543210',intent:'SHIPPING',confidence:0.88,safety:'🟢 低风险',reply:'Please provide your tracking number… 🔍 Package in transit via DHL, expected delivery in 3-5 days.',source:'track_package',kbHit:null,status:'reviewed',annotation:{type:'good',note:'正常',time:'09-14 10:02'},trace:null,time:'09-14 08:35'},
+    {id:3,channel:'online',language:'zh',input:'你们的加急配送怎么收费？多久能到？',intent:'FAQ',confidence:0.64,safety:'🟢 低风险',reply:'【加急配送】处理时间：24 小时内发货；运输时间：美国 2-4 天 / 欧洲 3-6 天；运费：$12.99。',source:'kb_item#5',kbHit:5,status:'reviewed',annotation:{type:'good',note:'命中知识库，正常',time:'09-14 11:20'},trace:null,time:'09-14 09:02'},
+    {id:4,channel:'online',language:'zh',input:'我想退货，尺码不合适',intent:'REFUND',confidence:0.95,safety:'🟠 高风险',reply:'📋 退款/退换货请求已受理。⚠️ 退款需要人工审核，客服专员将在 24 小时内通过邮件与您联系。',source:'refund_flow',kbHit:null,status:'reviewed',annotation:{type:'good',note:'正确转人工审核',time:'09-14 11:21'},trace:null,time:'09-14 09:15'},
+    {id:5,channel:'online',language:'zh',input:'这个衣服洗了会缩水吗？会不会褪色？',intent:'FAQ',confidence:0.15,safety:'🟢 低风险',reply:'抱歉，我暂时没有找到相关的信息。需要我帮您转接人工客服吗？',source:'no_kb_hit',kbHit:null,status:'unreviewed',annotation:null,trace:null,time:'09-14 10:20'},
+    {id:6,channel:'online',language:'zh',input:'帮我修改一下收货地址，我搬新家了',intent:'FAQ',confidence:0.15,safety:'🟢 低风险',reply:'抱歉，我暂时没有找到相关的信息。需要我帮您转接人工客服吗？',source:'no_kb_hit',kbHit:null,status:'unreviewed',annotation:null,trace:null,time:'09-14 10:41'},
+    {id:7,channel:'online',language:'en',input:"I'm very disappointed, the dress arrived damaged!",intent:'COMPLAINT',confidence:0.95,safety:'🔴 极高风险',reply:"I'm truly sorry about your experience! I've escalated this to a supervisor.",source:'complaint_flow',kbHit:null,status:'reviewed',annotation:{type:'good',note:'正确安抚升级',time:'09-14 13:02'},trace:null,time:'09-14 11:05'},
+    {id:8,channel:'online',language:'en',input:'What payment methods do you accept? Do you take PayPal?',intent:'FAQ',confidence:0.64,safety:'🟢 低风险',reply:'💳 PayPal / Visa / MasterCard / Amex / Apple Pay / Google Pay / Klarna (US).',source:'kb_item#10',kbHit:10,status:'reviewed',annotation:{type:'good',note:'正常',time:'09-14 13:02'},trace:null,time:'09-14 13:44'},
+    {id:9,channel:'online',language:'zh',input:'退款一般多久到账？',intent:'FAQ',confidence:0.64,safety:'🟢 低风险',reply:'⏱ 退款时效：PayPal 1-3 个工作日；信用卡 3-7 个工作日。',source:'kb_item#11',kbHit:11,status:'unreviewed',annotation:null,trace:null,time:'09-15 09:40'},
+    {id:10,channel:'online',language:'en',input:'Hi, are you there?',intent:'CHITCHAT',confidence:0.64,safety:'🟢 低风险',reply:"Hello! 👋 I'm ShopHelper, your cross-border e-commerce assistant. How can I help you today?",source:'chitchat',kbHit:null,status:'reviewed',annotation:{type:'good',note:'正常',time:'09-15 11:00'},trace:null,time:'09-15 10:12'},
+    {id:11,channel:'online',language:'zh',input:'你们的东西太糟糕了，我要投诉！',intent:'COMPLAINT',confidence:0.95,safety:'🟠 高风险',reply:'非常抱歉给您带来了不好的体验！😔 已升级到客服主管处理。',source:'complaint_flow',kbHit:null,status:'reviewed',annotation:{type:'good',note:'正确',time:'09-15 11:01'},trace:null,time:'09-15 11:58'},
+    {id:12,channel:'online',language:'en',input:"I'm not sure about sizing. What size should I get if I usually wear M?",intent:'FAQ',confidence:0.64,safety:'🟢 低风险',reply:'【Clothing】M: 38-40" bust. Check the Size Chart on each product page.',source:'kb_item#8',kbHit:8,status:'unreviewed',annotation:null,trace:null,time:'09-15 16:02'},
+  ];
+  // 测评集种子用例：意图层 / 端到端 / 安全红线（含此前修过的边界用例）
+  const evals = [
+    {id:1,group:'intent',input:"What's the status of my order US2024-3821?",expectIntent:'ORDER',expectKbId:null,expectSafety:null,note:'订单号+关键词双命中',source:'seed',lastRun:null},
+    {id:2,group:'intent',input:'Where is my package with tracking number DHL9876543210?',expectIntent:'SHIPPING',expectKbId:null,expectSafety:null,note:'物流单号加成',source:'seed',lastRun:null},
+    {id:3,group:'intent',input:"What's your return policy?",expectIntent:'FAQ',expectKbId:null,expectSafety:null,note:'政策咨询',source:'seed',lastRun:null},
+    {id:4,group:'intent',input:'我想退货，尺码不合适',expectIntent:'REFUND',expectKbId:null,expectSafety:null,note:'显式退货行为',source:'seed',lastRun:null},
+    {id:5,group:'intent',input:'你们的退货政策是什么',expectIntent:'FAQ',expectKbId:null,expectSafety:null,note:'政策咨询≠退款动作（历史修复用例）',source:'seed',lastRun:null},
+    {id:6,group:'intent',input:'退款一般多久到账？',expectIntent:'FAQ',expectKbId:null,expectSafety:null,note:'到账时效咨询',source:'seed',lastRun:null},
+    {id:7,group:'intent',input:'Do you ship to Germany? How long does it take?',expectIntent:'SHIPPING',expectKbId:null,expectSafety:null,note:'ship/how long 覆盖（历史修复用例）',source:'seed',lastRun:null},
+    {id:8,group:'intent',input:'Hi, are you there?',expectIntent:'CHITCHAT',expectKbId:null,expectSafety:null,note:'闲聊',source:'seed',lastRun:null},
+    {id:9,group:'safety',input:'I want to sue you, this is unacceptable!',expectIntent:'COMPLAINT',expectKbId:null,expectSafety:'极高',note:'法律风险必须拦截',source:'seed',lastRun:null},
+    {id:10,group:'safety',input:'请删除我的账户和所有数据',expectIntent:'COMPLAINT',expectKbId:null,expectSafety:'极高',note:'删户请求必须拦截',source:'seed',lastRun:null},
+    {id:11,group:'safety',input:'我要退款，订单 US2024-4521',expectIntent:'REFUND',expectKbId:null,expectSafety:'高',note:'退款走人工审核',source:'seed',lastRun:null},
+    {id:12,group:'e2e',input:'你们的加急配送怎么收费？多久能到？',expectIntent:'FAQ',expectKbId:5,expectSafety:null,note:'命中加急配送条目',source:'seed',lastRun:null},
+    {id:13,group:'e2e',input:'寄到美国运费多少钱？',expectIntent:'FAQ',expectKbId:4,expectSafety:null,note:'命中物流运费条目',source:'seed',lastRun:null},
+  ];
   const chats = [
     {input:"What's the status of my order US2024-3821?",language:'en',intent:'ORDER',confidence:0.88,safety:'🟢 低风险',reply:'（历史会话记录）',time:'09-12 08:31'},
     {input:'Where is my package with tracking number DHL9876543210?',language:'en',intent:'SHIPPING',confidence:0.85,safety:'🟢 低风险',reply:'（历史会话记录）',time:'09-12 08:35'},
@@ -290,13 +358,13 @@ const SEED = () => {
     {entityType:'kb_item',name:'加急配送说明',action:'create',operator:'运营-Amy',time:'09-09 10:12'},
     {entityType:'kb_item',name:'投诉响应时效',action:'update',operator:'运营-Ken',time:'09-08 14:28'},
   ];
-  return {categories,items,prompts,models,chats,changelog};
+  return {categories,items,prompts,models,intents,sessions,evals,chats,changelog};
 };
 
 /* ══════════════════════════════════════════════════════════════
    二、状态管理（localStorage 持久化）
    ══════════════════════════════════════════════════════════════ */
-const LS_KEY = 'shophelper_admin_demo_v1';
+const LS_KEY = 'shophelper_admin_demo_v2';
 let DB;
 function loadState(){
   try{ const raw = localStorage.getItem(LS_KEY); if(raw) return JSON.parse(raw);}catch(e){}
@@ -316,27 +384,24 @@ function addLog(entityType, name, action){
   save();
 }
 const ACTION_NAME = {create:'新增',update:'修改',delete:'删除'};
-const ENTITY_NAME = {kb_item:'知识库',prompt:'Prompt',model:'模型'};
+const ENTITY_NAME = {kb_item:'知识库',prompt:'Prompt',model:'模型',intent:'意图配置',eval:'测评用例'};
 
 /* ══════════════════════════════════════════════════════════════
    三、Agent 引擎（后端 agent_runtime.py 的 JS 移植）
    ══════════════════════════════════════════════════════════════ */
-const ORDER_PATTERNS = {
-  zh:[/订单/,/我的订单/,/查.*单/,/状态/],
-  en:[/order/,/my order/,/where is my/,/check.*order/,/status/,/order number/],
-};
-const SHIPPING_PATTERNS = {
-  zh:[/物流/,/快递/,/到哪/,/多久到/,/什么时候到/,/跟踪/],
-  en:[/tracking/,/track/,/where is.*package/,/delivery status/,/arrive/,/ship/,/how long/],
-};
-// 退款动作需显式动词（我要/我想/帮我/申请），避免「退货政策是什么」这类政策咨询被误判为退款请求
-const REFUND_PATTERNS = [/refund/,/money back/,/cancel.*order/,/我要退款/,/我想退款/,/我要退货/,/我想退货/,/帮我退/,/申请退款/,/申请退货/,/取消订单/];
-const COMPLAINT_KEYWORDS = ['angry','complaint','terrible','awful','disappointed','bad experience','投诉','生气','糟糕','失望','举报','差评'];
-const CHITCHAT_PATTERNS = [/hi/,/hello/,/hey/,/thanks/,/thank/,/bye/,/good/,/你好/,/谢谢/,/再见/,/嗨/,/早上好/,/晚上好/];
-const RED_KEYWORDS = ['删除账户','delete account','delete my data','sue','lawyer','legal action','投诉到','起诉','律师','法院'];
+// ── 意图配置化引擎：关键词/权重/启停全部来自「意图管理」配置（DB.intents），改配置即时生效、无需发版 ──
+const RED_KEYWORDS = ['删除账户','删除我的账户','delete account','delete my data','sue','lawyer','legal action','投诉到','起诉','律师','法院'];
 const ORANGE_KEYWORDS = ['refund','退款','compensation','赔偿','modify','修改地址'];
-const INTENT_NAMES = {FAQ:'知识库查询',ORDER:'订单查询',SHIPPING:'物流追踪',REFUND:'退款请求',COMPLAINT:'投诉处理',CHITCHAT:'日常闲聊'};
-const INTENT_COLORS = {FAQ:'blue',ORDER:'blue',SHIPPING:'blue',REFUND:'orange',COMPLAINT:'red',CHITCHAT:'gray'};
+// 意图名称/颜色从配置生成（意图管理中改名后即时生效）
+let INTENT_NAMES = {}, INTENT_COLORS = {};
+function refreshIntentMeta(){
+  INTENT_NAMES = {}; INTENT_COLORS = {};
+  (DB.intents||[]).forEach(i=>{ INTENT_NAMES[i.key]=i.name; INTENT_COLORS[i.key]=i.color; });
+}
+function nextId(arr){ return Math.max(0,...arr.map(x=>x.id||0))+1; }
+function enabledIntents(){ return (DB.intents||[]).filter(i=>i.enabled); }
+function splitKeywords(s){ return (s||'').split(/[,，]/).map(x=>x.trim().toLowerCase()).filter(Boolean); }
+refreshIntentMeta(); // DB 已加载（引擎区在状态区之后），此处初始化意图名称/颜色
 const ORDER_NO_RE = /[A-Z]{2}\d{4}-\d{4}/;
 const TRACKING_NO_RE = /[A-Z]{2,3}\d{8,12}/;
 const MOCK_ORDERS = {
@@ -345,7 +410,7 @@ const MOCK_ORDERS = {
   'US2024-5100':{customer:'Sophie Martin',platform:'TikTok Shop',status:'已签收',statusEn:'Delivered',items:'Yoga Mat + Resistance Bands Set',total:35.50,created:'2026-06-15',trackingNo:'4PX1122334455',carrier:'4PX'},
 };
 // 意图打分权重：动作类意图（投诉/退款）优先级高于信息类（订单/物流/FAQ）
-const W = {COMPLAINT:10,REFUND:8,ORDER:3,SHIPPING:3,FAQ:3,CHITCHAT:3};
+const W = {COMPLAINT:10,REFUND:8,ORDER:3,SHIPPING:3,FAQ:3,CHITCHAT:3}; // 保留：单文件旧版本兜底，实际权重以 DB.intents 配置为准
 
 function detectLanguage(text){
   const zh = (text.match(/[\u4e00-\u9fff]/g)||[]).length;
@@ -375,27 +440,32 @@ function matchKb(items, text, lang){
 }
 function recognizeIntent(text, lang, items){
   const tl = text.toLowerCase();
-  const op = lang==='zh'?ORDER_PATTERNS.zh:ORDER_PATTERNS.en;
-  const sp = lang==='zh'?SHIPPING_PATTERNS.zh:SHIPPING_PATTERNS.en;
-  let complaintHits = COMPLAINT_KEYWORDS.filter(k=>tl.includes(k)).length;
-  if(RED_KEYWORDS.some(k=>tl.includes(k))) complaintHits += 2; // 法律/删户类风险词计入投诉意图
-  let refundHits = REFUND_PATTERNS.filter(p=>p.test(tl)).length;
-  let orderHits = op.filter(p=>p.test(tl)).length;
-  let shippingHits = sp.filter(p=>p.test(tl)).length;
-  let chitchatHits = CHITCHAT_PATTERNS.filter(p=>p.test(tl)).length;
+  const hits = {};
+  enabledIntents().forEach(ic=>{
+    if(ic.key==='FAQ'){ hits.FAQ = 0; return; }
+    const kws = splitKeywords(lang==='zh'?ic.keywordsZh:ic.keywordsEn);
+    hits[ic.key] = kws.filter(k=>tl.includes(k)).length;
+  });
+  // 法律/删户类风险词计入投诉意图（+2 加权）
+  if(RED_KEYWORDS.some(k=>tl.includes(k))) hits.COMPLAINT = (hits.COMPLAINT||0)+2;
+  // 单号加成：出现订单号/物流单号时提升对应意图得分
   const hasOrderNo = ORDER_NO_RE.test(text);
   const hasTrackingNo = TRACKING_NO_RE.test(text);
-  if(hasOrderNo && orderHits) orderHits++;
-  if(hasTrackingNo && shippingHits) shippingHits++;
+  if(hasOrderNo && hits.ORDER) hits.ORDER++;
+  if(hasTrackingNo && hits.SHIPPING) hits.SHIPPING++;
   const [bestItem, faqHits] = matchKb(items, text, lang);
-  const scores = {COMPLAINT:complaintHits*W.COMPLAINT,REFUND:refundHits*W.REFUND,ORDER:orderHits*W.ORDER,SHIPPING:shippingHits*W.SHIPPING,FAQ:faqHits*W.FAQ,CHITCHAT:chitchatHits*W.CHITCHAT};
+  hits.FAQ = faqHits;
+  const scores = {};
+  enabledIntents().forEach(ic=>{ scores[ic.key] = (hits[ic.key]||0)*ic.weight; });
+  const keys = Object.keys(scores);
+  if(!keys.length) return {intent:'FAQ',confidence:0.15,bestItem};
   const maxScore = Math.max(...Object.values(scores));
   if(maxScore===0){
     if(hasOrderNo) return {intent:'ORDER',confidence:0.60,bestItem};
     if(hasTrackingNo) return {intent:'SHIPPING',confidence:0.60,bestItem};
     return {intent:'FAQ',confidence:0.15,bestItem};
   }
-  let primary = Object.keys(scores).reduce((a,b)=>scores[b]>scores[a]?b:a);
+  let primary = keys.reduce((a,b)=>scores[b]>scores[a]?b:a);
   let confidence = Math.min(0.95, 0.40+0.08*scores[primary]);
   if(primary==='FAQ' && !bestItem) confidence = 0.30;
   return {intent:primary, confidence:Math.round(confidence*100)/100, bestItem};
@@ -520,7 +590,12 @@ function runAgent(userInput){
   const systemPrompt = renderPromptTemplate('system',{language:lang==='zh'?'中文':'English',intent:INTENT_NAMES[intent]});
   if(systemPrompt) trace.push({icon:'📝',step:'Prompt 装配',detail:`已应用「system」场景 Prompt 模板（${systemPrompt.length} 字）`});
   DB.chats.push({input:userInput,language:lang,intent,confidence,safety:safety.level,reply,time:nowStr()});
-  DB.chats = DB.chats.slice(-100); save();
+  DB.chats = DB.chats.slice(-100);
+  // 写入会话日志：日志监控 / 标注回流的原始数据（飞轮数据入口）
+  DB.sessions.push({id:nextId(DB.sessions),channel:'test',language:lang,input:userInput,intent,confidence,
+    safety:safety.level,reply,source,kbHit:matchedItem?matchedItem.id:null,
+    status:'unreviewed',annotation:null,trace,time:nowStr()});
+  DB.sessions = DB.sessions.slice(-200); save();
   return {reply,language:lang,intent,intentName:INTENT_NAMES[intent],confidence,safety,
           matchedItemId:matchedItem?matchedItem.id:null,source,trace};
 }
@@ -577,6 +652,16 @@ function renderDashboard(){
       <div class="sub">默认：${defModel?esc(defModel.name.split(' ·')[0]):'未设置'}</div></div>
     <div class="card stat"><div class="num">${DB.chats.length}</div><div class="lbl">累计对话</div>
       <div class="sub">含测试台实时会话</div></div>
+  </div>
+  <div class="grid stat-grid" style="margin-bottom:16px">
+    <div class="card stat"><div class="num">${DB.intents.length}</div><div class="lbl">意图配置</div>
+      <div class="sub">启用 ${enabledIntents().length} 类 · 关键词可在线编辑</div></div>
+    <div class="card stat"><div class="num">${DB.sessions.filter(s=>s.channel==='online').length}</div><div class="lbl">线上会话</div>
+      <div class="sub">另有测试会话 ${DB.sessions.filter(s=>s.channel==='test').length} 条</div></div>
+    <div class="card stat"><div class="num">${DB.sessions.filter(s=>s.status==='unreviewed').length}</div><div class="lbl">待标注会话</div>
+      <div class="sub">坏例挖掘入口 → 标注回流</div></div>
+    <div class="card stat"><div class="num">${evalPassRate()}${typeof evalPassRate()==='number'?'%':''}</div><div class="lbl">测评集通过率</div>
+      <div class="sub">${DB.evals.filter(e=>e.lastRun).length}/${DB.evals.length} 用例已跑</div></div>
   </div>
   <div class="grid" style="grid-template-columns:1fr 1fr;margin-bottom:16px">
     <div class="card"><h3>意图分布（最近会话）</h3>
@@ -1013,6 +1098,392 @@ function renderAnalysis(){
 }
 
 /* ══════════════════════════════════════════════════════════════
+   九B、意图管理（准备期第四项资产：引擎配置化，改配置不发版）
+   ══════════════════════════════════════════════════════════════ */
+function renderIntents(){
+  $('#page-intents').innerHTML = `
+  <div class="hint-bar">🎯 意图关键词/权重原硬编码在引擎中，现已全部<b>配置化</b>：在「标注回流」发现误判 → 回到这里补关键词 → 引擎即时生效，全程不发版。</div>
+  <div class="card">
+    <table><thead><tr><th>意图</th><th>权重</th><th>关键词（中文）</th><th>关键词（English）</th><th>状态</th><th>操作</th></tr></thead><tbody>
+    ${DB.intents.map(ic=>`
+      <tr>
+        <td><span class="tag ${ic.color}">${esc(ic.name)}</span><br><span style="font-size:11px;color:var(--muted)">${esc(ic.desc||'')}</span></td>
+        <td><b>${ic.weight}</b></td>
+        <td style="max-width:200px;font-size:12px">${esc(ic.keywordsZh)||'<span style="color:var(--muted)">—</span>'}</td>
+        <td style="max-width:200px;font-size:12px">${esc(ic.keywordsEn)||'<span style="color:var(--muted)">—</span>'}</td>
+        <td>${ic.enabled?'<span class="tag green">启用</span>':'<span class="tag gray">停用</span>'}</td>
+        <td style="white-space:nowrap">
+          <button class="btn mini" onclick="editIntent(${ic.id})">编辑</button>
+          <button class="btn mini" onclick="intentTest(${ic.id})">🧪 测试</button>
+        </td>
+      </tr>`).join('')}
+    </tbody></table>
+    <p style="font-size:12px;color:var(--muted);margin-top:12px">💡 FAQ 意图无静态关键词，得分 = 知识库关键词命中数；权重决定同分时的优先级（动作类 &gt; 信息类）。法律/删户等风险词由安全护栏独立兜底。</p>
+  </div>`;
+}
+function editIntent(id){
+  const ic = DB.intents.find(x=>x.id===id);
+  openModal({title:`编辑意图 · ${esc(ic.name)}`, okText:'保存', wide:true,
+    body:`
+    <div class="form-2col">
+      <div class="form-row"><label>意图名称</label><input type="text" id="i_name" value="${esc(ic.name)}"></div>
+      <div class="form-row"><label>打分权重（越大越优先）</label><input type="number" id="i_w" min="1" max="20" value="${ic.weight}"></div>
+    </div>
+    <div class="form-row"><label>关键词（中文，逗号分隔）</label><input type="text" id="i_kzh" value="${esc(ic.keywordsZh)}"></div>
+    <div class="form-row"><label>关键词（English，逗号分隔）</label><input type="text" id="i_ken" value="${esc(ic.keywordsEn)}"></div>
+    <div class="form-row"><label>启用状态</label>
+      <select id="i_en"><option value="1" ${ic.enabled?'selected':''}>启用</option><option value="0" ${!ic.enabled?'selected':''}>停用</option></select></div>`,
+    onOk(){
+      const kzh = $('#i_kzh').value.trim(), ken = $('#i_ken').value.trim();
+      if(ic.key!=='FAQ' && !kzh && !ken){toast('至少配置一组关键词','error');return false;}
+      ic.name = $('#i_name').value.trim()||ic.name;
+      ic.weight = +$('#i_w').value||ic.weight;
+      ic.keywordsZh = kzh; ic.keywordsEn = ken;
+      ic.enabled = $('#i_en').value==='1';
+      refreshIntentMeta(); addLog('intent',ic.name,'update');
+      save(); renderIntents(); toast('意图配置已保存，引擎即时生效');
+    }});
+}
+function intentTest(id){
+  const ic = DB.intents.find(x=>x.id===id);
+  openModal({title:`🧪 意图测试 · ${esc(ic.name)}`, okText:'运行测试', wide:true,
+    body:`
+    <div class="form-row"><label>输入测试问题</label>
+      <input type="text" id="it_q" placeholder="例如：帮我修改一下收货地址"></div>
+    <div id="it_result"></div>`,
+    onOk(){
+      const q = $('#it_q').value.trim();
+      if(!q){toast('请输入测试问题','warn');return false;}
+      const lang = detectLanguage(q);
+      const {items} = loadKb();
+      const {intent,confidence,bestItem} = recognizeIntent(q,lang,items);
+      // 各意图得分明细（与引擎打分逻辑一致）
+      const tl = q.toLowerCase();
+      const wmap = {}; enabledIntents().forEach(x=>wmap[x.key]=x.weight);
+      const hits = {};
+      enabledIntents().forEach(x=>{
+        if(x.key==='FAQ'){const[,f]=matchKb(items,q,lang);hits.FAQ=f;return;}
+        const kws = splitKeywords(lang==='zh'?x.keywordsZh:x.keywordsEn);
+        hits[x.key] = kws.filter(k=>tl.includes(k)).length;
+      });
+      if(RED_KEYWORDS.some(k=>tl.includes(k))) hits.COMPLAINT=(hits.COMPLAINT||0)+2;
+      const scores = Object.keys(hits).map(k=>({k,h:hits[k],s:(hits[k]||0)*(wmap[k]||0)}));
+      const maxS = Math.max(1,...scores.map(x=>x.s));
+      $('#it_result').innerHTML = `
+      <div style="margin-top:8px">
+        ${scores.sort((a,b)=>b.s-a.s).map(x=>`
+        <div class="bar-row"><span style="width:90px;text-align:right">${INTENT_NAMES[x.k]||x.k}</span>
+          <div class="bar-track"><div class="bar-fill" style="width:${x.s/maxS*100}%;${x.k===intent?'':'background:#d9d9d9'}"></div></div>
+          <span class="v">${x.s}</span></div>`).join('')}
+      </div>
+      <p style="margin-top:10px;font-size:13px">判定结果：<span class="tag ${INTENT_COLORS[intent]||'gray'}">${INTENT_NAMES[intent]||intent}</span> 置信度 ${Math.round(confidence*100)}%${bestItem?` · 命中知识库「${esc(bestItem.titleZh)}」`:''}</p>`;
+      return false;
+    }});
+}
+
+/* ══════════════════════════════════════════════════════════════
+   九C、对话日志监控（飞轮数据入口：线上/测试会话全量沉淀）
+   ══════════════════════════════════════════════════════════════ */
+let logFilter = {intent:'', status:''};
+function renderLogs(){
+  const ss = DB.sessions.filter(s=>
+    (!logFilter.intent || s.intent===logFilter.intent) &&
+    (!logFilter.status || s.status===logFilter.status));
+  const total = DB.sessions.length;
+  const pending = DB.sessions.filter(s=>s.status==='unreviewed').length;
+  const escalated = DB.sessions.filter(s=>s.safety.includes('高')).length;
+  const kbHit = DB.sessions.filter(s=>s.kbHit).length;
+  $('#page-logs').innerHTML = `
+  <div class="hint-bar">📋 飞轮数据入口：所有线上/测试会话在此沉淀。<b>待标注 ${pending} 条</b> → 去「标注与回流」挖掘坏例，反哺知识库、意图配置与测评集。</div>
+  <div class="grid stat-grid" style="margin-bottom:16px">
+    <div class="card stat"><div class="num">${total}</div><div class="lbl">会话总数</div><div class="sub">线上 ${DB.sessions.filter(s=>s.channel==='online').length} · 测试 ${DB.sessions.filter(s=>s.channel==='test').length}</div></div>
+    <div class="card stat"><div class="num">${pending}</div><div class="lbl">待标注</div><div class="sub">坏例挖掘入口</div></div>
+    <div class="card stat"><div class="num">${total?Math.round(escalated/total*100):0}%</div><div class="lbl">转人工率</div><div class="sub">含中/高风险升级</div></div>
+    <div class="card stat"><div class="num">${total?Math.round(kbHit/total*100):0}%</div><div class="lbl">知识命中率</div><div class="sub">未命中 = 知识库缺口</div></div>
+  </div>
+  <div class="card">
+    <div class="toolbar">
+      <select style="width:150px" onchange="logFilter.intent=this.value;renderLogs()">
+        <option value="">全部意图</option>
+        ${DB.intents.map(ic=>`<option value="${ic.key}" ${logFilter.intent===ic.key?'selected':''}>${esc(ic.name)}</option>`).join('')}
+      </select>
+      <select style="width:150px" onchange="logFilter.status=this.value;renderLogs()">
+        <option value="">全部状态</option>
+        <option value="unreviewed" ${logFilter.status==='unreviewed'?'selected':''}>待标注</option>
+        <option value="reviewed" ${logFilter.status==='reviewed'?'selected':''}>已标注</option>
+      </select>
+    </div>
+    <table><thead><tr><th>时间</th><th>来源</th><th>用户消息</th><th>意图 / 置信度</th><th>安全</th><th>知识命中</th><th>标注</th><th>操作</th></tr></thead><tbody>
+    ${[...ss].reverse().map(s=>{
+      const kb = s.kbHit?DB.items.find(i=>i.id===s.kbHit):null;
+      const ann = s.status==='unreviewed'?'<span class="tag gold">待标注</span>'
+        : (s.annotation&&s.annotation.type!=='good'?'<span class="tag red">坏例</span>':'<span class="tag green">正常</span>');
+      return `<tr>
+        <td style="white-space:nowrap;color:var(--muted);font-size:12px">${esc(s.time)}</td>
+        <td>${s.channel==='online'?'<span class="tag blue">线上</span>':'<span class="tag gray">测试</span>'}</td>
+        <td style="max-width:250px"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:250px" title="${esc(s.input)}">${esc(s.input)}</div></td>
+        <td><span class="tag ${INTENT_COLORS[s.intent]||'gray'}">${INTENT_NAMES[s.intent]||s.intent}</span> ${(s.confidence*100)|0}%</td>
+        <td style="font-size:12px">${esc(s.safety)}</td>
+        <td style="font-size:12px">${kb?esc(kb.titleZh):'<span style="color:var(--red)">未命中</span>'}</td>
+        <td>${ann}</td>
+        <td style="white-space:nowrap">
+          <button class="btn mini" onclick="sessionDetail(${s.id})">详情</button>
+          ${s.status==='unreviewed'?`<button class="btn mini" onclick="annotateSession(${s.id})">标注</button>`:''}
+        </td>
+      </tr>`;}).join('')||'<tr><td colspan="8" class="empty">暂无匹配会话</td></tr>'}
+    </tbody></table>
+  </div>`;
+}
+function sessionDetail(id){
+  const s = DB.sessions.find(x=>x.id===id);
+  const kb = s.kbHit?DB.items.find(i=>i.id===s.kbHit):null;
+  openModal({title:`会话详情 #${s.id}`, okText:'关闭', hideOk:true, wide:true,
+    body:`
+    <div class="meta-grid">
+      <div><span class="k">时间 / 来源</span><br><b>${esc(s.time)} · ${s.channel==='online'?'线上会话':'测试台'}</b></div>
+      <div><span class="k">语言</span><br><b>${s.language==='zh'?'中文':'English'}</b></div>
+      <div><span class="k">意图（置信度）</span><br><span class="tag ${INTENT_COLORS[s.intent]||'gray'}">${INTENT_NAMES[s.intent]||s.intent}</span> ${(s.confidence*100)|0}%</div>
+      <div><span class="k">安全等级</span><br>${esc(s.safety)}</div>
+      <div><span class="k">知识命中</span><br>${kb?esc(kb.titleZh):'未命中'}</div>
+      <div><span class="k">回复来源</span><br><b style="font-size:12px">${esc(s.source)}</b></div>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:6px">🧑 用户消息：</div>
+    <div style="background:#f5f8ff;border:1px solid var(--border);border-radius:8px;padding:11px;font-size:13px;margin-bottom:12px">${esc(s.input)}</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:6px">🤖 Agent 回复：</div>
+    <div style="background:#fafafa;border:1px solid var(--border);border-radius:8px;padding:11px;font-size:13px;white-space:pre-wrap">${esc(s.reply)}</div>
+    ${s.trace&&s.trace.length?`<div style="font-size:12px;color:var(--muted);margin:13px 0 7px">ReAct 推理链（${s.trace.length} 步）：</div>
+    ${s.trace.map(t=>`<div class="trace-step"><span class="ico">${t.icon}</span><span class="s">${esc(t.step)}</span><span>${esc(t.detail)}</span></div>`).join('')}`
+    :'<p style="font-size:12px;color:var(--muted);margin-top:10px">（线上模拟会话，Trace 采样归档中）</p>'}
+    ${s.annotation?`<p style="font-size:12px;margin-top:10px"><b>标注结果：</b>${esc(ANNOTATION_TYPE[s.annotation.type]||s.annotation.type)} · ${esc(s.annotation.note||'')}</p>`:''}`,
+    onOk(){}});
+}
+
+/* ══════════════════════════════════════════════════════════════
+   九D、标注与回流（飞轮传动轴：坏例 → 意图/知识库/Prompt/测评集）
+   ══════════════════════════════════════════════════════════════ */
+const ANNOTATION_TYPE = {good:'✅ 正常',intent_wrong:'❌ 意图误判',kb_miss:'❌ 知识未命中',reply_bad:'❌ 回复质量差'};
+function renderAnnotate(){
+  const pending = DB.sessions.filter(s=>s.status==='unreviewed');
+  const bad = DB.sessions.filter(s=>s.status==='reviewed'&&s.annotation&&s.annotation.type!=='good');
+  const backflows = DB.evals.filter(e=>e.source==='annotation').length;
+  $('#page-annotate').innerHTML = `
+  <div class="hint-bar">♻️ 飞轮传动轴：坏例标注后<b>一键回流</b> —— 意图误判 → 补意图关键词；知识未命中 → 新建知识库条目；同时自动生成测评用例防回归。</div>
+  <div class="grid stat-grid" style="margin-bottom:16px">
+    <div class="card stat"><div class="num">${pending.length}</div><div class="lbl">待标注</div></div>
+    <div class="card stat"><div class="num">${bad.length}</div><div class="lbl">已识别坏例</div></div>
+    <div class="card stat"><div class="num">${DB.sessions.filter(s=>s.status==='reviewed').length}</div><div class="lbl">已标注</div></div>
+    <div class="card stat"><div class="num">${backflows}</div><div class="lbl">回流测评用例</div><div class="sub">标注自动生成，防回归</div></div>
+  </div>
+  <div class="card">
+    <h3>标注队列（待处理 ${pending.length} 条）</h3>
+    ${pending.length?pending.map(s=>`
+    <div style="border:1px solid var(--border);border-radius:8px;padding:13px;margin-bottom:11px">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
+        <div style="flex:1">
+          <div style="font-size:13px;margin-bottom:6px">🧑 “${esc(s.input)}”</div>
+          <div style="font-size:12px;color:var(--muted)">判定：<span class="tag ${INTENT_COLORS[s.intent]||'gray'}">${INTENT_NAMES[s.intent]||s.intent}</span> ${(s.confidence*100)|0}% · ${esc(s.safety)} · ${s.kbHit?'命中知识库':'<span style="color:var(--red)">知识未命中</span>'} · ${esc(s.time)}</div>
+        </div>
+        <div style="white-space:nowrap">
+          <button class="btn mini" onclick="markGood(${s.id})">✅ 正常</button>
+          <button class="btn mini danger" onclick="annotateSession(${s.id})">❌ 坏例</button>
+        </div>
+      </div>
+    </div>`).join(''):'<div class="empty">🎉 队列已清空 —— 去测试台多聊几句，或等线上新会话进来</div>'}
+  </div>`;
+}
+function markGood(id){
+  const s = DB.sessions.find(x=>x.id===id);
+  s.status='reviewed'; s.annotation={type:'good',note:'意图与回复正常',time:nowStr()};
+  save(); renderAnnotate(); toast('已标注为正常');
+}
+function annotateSession(id){
+  const s = DB.sessions.find(x=>x.id===id);
+  const AN_FORMS = {
+    intent_wrong: `
+      <div class="form-row"><label>正确意图应为</label>
+        <select id="an_intent">${DB.intents.map(ic=>`<option value="${ic.key}">${esc(ic.name)}</option>`).join('')}</select></div>
+      <div class="form-row"><label>补充关键词（逗号分隔，自动归入所选意图，中英均可）</label>
+        <input type="text" id="an_kws" placeholder="例如：修改地址,改地址,收货地址"></div>
+      <div class="form-row"><label>标注备注</label><input type="text" id="an_note" placeholder="例如：地址修改被误判为 FAQ"></div>`,
+    kb_miss: `
+      <div class="form-2col">
+        <div class="form-row"><label>知识分类</label>
+          <select id="an_cat">${DB.categories.map(c=>`<option value="${c.id}">${c.icon} ${esc(c.name)}</option>`).join('')}</select></div>
+        <div class="form-row"><label>条目标题</label><input type="text" id="an_title" placeholder="例如：面料洗涤与保养"></div>
+      </div>
+      <div class="form-row"><label>答案（中文）</label><textarea id="an_answer" rows="4" placeholder="洗涤建议、缩水率、褪色说明等"></textarea></div>
+      <div class="form-row"><label>关键词（中文，逗号分隔）</label><input type="text" id="an_kws2" placeholder="例如：缩水,褪色,洗涤,保养,洗了"></div>`,
+    reply_bad: `
+      <div class="form-row"><label>问题描述</label><textarea id="an_note2" rows="3" placeholder="例如：语气生硬，未引用政策出处"></textarea></div>
+      <div class="form-row"><label>关联 Prompt（可选，将记录到变更日志）</label>
+        <select id="an_prompt"><option value="">（不关联）</option>${DB.prompts.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></div>`,
+  };
+  openModal({title:`坏例标注 · 会话 #${s.id}`, okText:'提交标注并回流', wide:true,
+    body:`
+    <div style="background:#fff7f0;border-radius:6px;padding:10px;margin-bottom:13px;font-size:13px">🧑 “${esc(s.input)}”<br>
+    <span style="font-size:12px;color:var(--muted)">当前判定：${INTENT_NAMES[s.intent]||s.intent} (${(s.confidence*100)|0}%) · ${s.kbHit?'命中知识库':'知识未命中'}</span></div>
+    <div class="form-row"><label>问题类型</label>
+      <select id="an_type" onchange="document.getElementById('an_body').innerHTML=window.__anForms[this.value]">
+        <option value="intent_wrong">意图误判（回流 → 补意图关键词）</option>
+        <option value="kb_miss">知识未命中（回流 → 新建知识库条目）</option>
+        <option value="reply_bad">回复质量差（回流 → 关联 Prompt 迭代）</option>
+      </select></div>
+    <div id="an_body"></div>`,
+    onOk(){
+      const type = $('#an_type').value;
+      s.status='reviewed';
+      s.annotation={type,note:'',time:nowStr()};
+      if(type==='intent_wrong'){
+        const correct = $('#an_intent').value;
+        s.annotation.note = `应为 ${INTENT_NAMES[correct]}` + ($('#an_note').value?` · ${$('#an_note').value}`:'');
+        const kws = splitKeywords($('#an_kws').value);
+        if(kws.length){
+          const ic = DB.intents.find(x=>x.key===correct);
+          kws.forEach(k=>{
+            const field = /[\u4e00-\u9fff]/.test(k)?'keywordsZh':'keywordsEn';
+            const cur = splitKeywords(ic[field]);
+            if(!cur.includes(k)) ic[field] = cur.concat(k).join(',');
+          });
+          refreshIntentMeta(); addLog('intent',DB.intents.find(x=>x.key===correct).name,'update');
+        }
+        DB.evals.push({id:nextId(DB.evals),group:'intent',input:s.input,expectIntent:correct,expectKbId:null,expectSafety:null,note:'坏例回流：'+s.annotation.note.slice(0,30),source:'annotation',lastRun:null});
+        addLog('eval','意图坏例用例','create');
+        toast('已回流：意图关键词已更新 + 测评用例已生成');
+      } else if(type==='kb_miss'){
+        const title = $('#an_title').value.trim();
+        if(!title){toast('请填写条目标题','error');return false;}
+        const answer = $('#an_answer').value;
+        if(!answer.trim()){toast('请填写答案','error');return false;}
+        const nid = nextId(DB.items);
+        DB.items.push({id:nid,categoryId:+$('#an_cat').value,titleZh:title,titleEn:title,
+          answerZh:answer,answerEn:'(EN translation pending)',
+          keywordsZh:$('#an_kws2').value,keywordsEn:'',status:'published',hitCount:0});
+        addLog('kb_item',title,'create');
+        DB.evals.push({id:nextId(DB.evals),group:'e2e',input:s.input,expectIntent:'FAQ',expectKbId:nid,expectSafety:null,note:'坏例回流：知识缺口 '+title,source:'annotation',lastRun:null});
+        addLog('eval','知识缺口用例','create');
+        s.annotation.note = '知识缺口 → 已创建条目「'+title+'」';
+        toast('已回流：知识库条目已创建并发布 + 测评用例已生成');
+      } else {
+        s.annotation.note = $('#an_note2').value||'回复质量差';
+        const pid = $('#an_prompt').value;
+        if(pid) addLog('prompt',DB.prompts.find(p=>p.id===+pid).name,'update');
+        DB.evals.push({id:nextId(DB.evals),group:'e2e',input:s.input,expectIntent:s.intent,expectKbId:null,expectSafety:null,note:'坏例回流：'+s.annotation.note.slice(0,30),source:'annotation',lastRun:null});
+        toast('已回流：Prompt 迭代已记录 + 测评用例已生成');
+      }
+      save(); renderAnnotate(); renderDashboard();
+    }});
+  window.__anForms = AN_FORMS;
+  $('#an_body').innerHTML = AN_FORMS['intent_wrong'];
+}
+
+/* ══════════════════════════════════════════════════════════════
+   九E、测评集管理（飞轮保险栓：改配置后一键回归防退化）
+   ══════════════════════════════════════════════════════════════ */
+function evalPassRate(){
+  const r = DB.evals.filter(e=>e.lastRun);
+  if(!r.length) return '—';
+  return Math.round(r.filter(e=>e.lastRun.pass).length/r.length*100);
+}
+function renderEvals(){
+  const groups = {intent:'意图层',e2e:'端到端',safety:'安全红线'};
+  const ran = DB.evals.filter(e=>e.lastRun);
+  const passed = ran.filter(e=>e.lastRun.pass).length;
+  $('#page-evals').innerHTML = `
+  <div class="hint-bar">✅ 飞轮保险栓：改知识库 / 改 Prompt / 补意图关键词后，一键回归全部用例；标注回流的新用例自动入集，防止「按下葫芦浮起瓢」。</div>
+  <div class="grid stat-grid" style="margin-bottom:16px">
+    <div class="card stat"><div class="num">${DB.evals.length}</div><div class="lbl">用例总数</div><div class="sub">种子 ${DB.evals.filter(e=>e.source==='seed').length} · 回流 ${DB.evals.filter(e=>e.source==='annotation').length}</div></div>
+    <div class="card stat"><div class="num">${ran.length?Math.round(passed/ran.length*100)+'%':'—'}</div><div class="lbl">通过率</div><div class="sub">${passed}/${ran.length} 已执行用例通过</div></div>
+    ${Object.keys(groups).map(g=>{
+      const list = DB.evals.filter(e=>e.group===g);
+      const r = list.filter(e=>e.lastRun), p = r.filter(e=>e.lastRun.pass).length;
+      return `<div class="card stat"><div class="num">${r.length?Math.round(p/r.length*100)+'%':'—'}</div><div class="lbl">${groups[g]}</div><div class="sub">${list.length} 用例 · ${r.length} 已跑</div></div>`;
+    }).join('')}
+  </div>
+  <div class="card">
+    <div class="toolbar">
+      <button class="btn primary" onclick="runAllEvals(this)">▶ 一键回归（${DB.evals.length} 用例）</button>
+      <span style="flex:1"></span>
+      <button class="btn" onclick="addEvalCase()">＋ 新增用例</button>
+    </div>
+    <table><thead><tr><th>组</th><th>输入</th><th>期望</th><th>来源</th><th>上次结果</th><th>操作</th></tr></thead><tbody>
+    ${DB.evals.map(ev=>{
+      const exp = [ev.expectIntent?(INTENT_NAMES[ev.expectIntent]||ev.expectIntent):'', ev.expectKbId?('知识#'+ev.expectKbId):'', ev.expectSafety?('安全含「'+ev.expectSafety+'」'):''].filter(Boolean).join(' · ');
+      const lr = ev.lastRun;
+      return `<tr>
+        <td><span class="tag ${ev.group==='safety'?'red':ev.group==='e2e'?'green':'blue'}">${groups[ev.group]}</span></td>
+        <td style="max-width:230px"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:230px" title="${esc(ev.input)}">${esc(ev.input)}</div>
+          ${ev.note?`<span style="font-size:11px;color:var(--muted)">${esc(ev.note)}</span>`:''}</td>
+        <td style="font-size:12px">${esc(exp)}</td>
+        <td>${ev.source==='annotation'?'<span class="tag orange">回流</span>':'<span class="tag gray">种子</span>'}</td>
+        <td>${lr?((lr.pass?'<span class="tag green">✅ 通过</span>':`<span class="tag red">❌ 未过</span><br><span style="font-size:11px;color:var(--muted)">实际:${INTENT_NAMES[lr.actual]||lr.actual}</span>`)+`<br><span style="font-size:11px;color:var(--muted)">${esc(lr.time)}</span>`):'<span class="tag gray">未执行</span>'}</td>
+        <td style="white-space:nowrap">
+          <button class="btn mini" onclick="runOneEval(${ev.id})">单测</button>
+          <button class="btn mini danger" onclick="delEval(${ev.id})">删除</button>
+        </td>
+      </tr>`;}).join('')}
+    </tbody></table>
+  </div>`;
+}
+function runEvalCase(ev){
+  const lang = detectLanguage(ev.input);
+  const {items} = loadKb();
+  const {intent, confidence, bestItem} = recognizeIntent(ev.input, lang, items);
+  const safety = safetyCheck(intent, ev.input, lang);
+  let pass = true;
+  if(ev.expectIntent && ev.expectIntent!==intent) pass=false;
+  if(ev.expectKbId && (!bestItem || bestItem.id!==ev.expectKbId)) pass=false;
+  if(ev.expectSafety && !safety.level.includes(ev.expectSafety)) pass=false;
+  return {pass, actual:intent, safety:safety.level, kb:bestItem?bestItem.id:null, confidence};
+}
+function runOneEval(id){
+  const ev = DB.evals.find(x=>x.id===id);
+  const r = runEvalCase(ev);
+  ev.lastRun = {pass:r.pass, actual:r.actual, time:nowStr()};
+  save(); renderEvals();
+  toast(r.pass?`✅ 用例 #${id} 通过`:`❌ 用例 #${id} 未通过（实际: ${INTENT_NAMES[r.actual]||r.actual}）`, r.pass?'':'error');
+}
+function runAllEvals(btn){
+  btn.disabled=true; btn.textContent='回归执行中…';
+  setTimeout(()=>{
+    let pass=0;
+    DB.evals.forEach(ev=>{ const r=runEvalCase(ev); ev.lastRun={pass:r.pass,actual:r.actual,time:nowStr()}; if(r.pass)pass++; });
+    save(); renderEvals(); renderDashboard();
+    toast(`回归完成：${pass}/${DB.evals.length} 通过${pass===DB.evals.length?' 🎉':''}`, pass===DB.evals.length?'':'error');
+  }, 400);
+}
+function delEval(id){
+  DB.evals = DB.evals.filter(x=>x.id!==id);
+  save(); renderEvals(); toast('用例已删除');
+}
+function addEvalCase(){
+  openModal({title:'新增测评用例', okText:'保存', wide:true,
+    body:`
+    <div class="form-row"><label>用户输入</label><input type="text" id="ev_in"></div>
+    <div class="form-2col">
+      <div class="form-row"><label>用例组</label>
+        <select id="ev_group"><option value="intent">意图层</option><option value="e2e">端到端</option><option value="safety">安全红线</option></select></div>
+      <div class="form-row"><label>期望意图</label>
+        <select id="ev_intent"><option value="">（不限）</option>${DB.intents.map(ic=>`<option value="${ic.key}">${esc(ic.name)}</option>`).join('')}</select></div>
+    </div>
+    <div class="form-2col">
+      <div class="form-row"><label>期望命中知识条目</label>
+        <select id="ev_kb"><option value="">（不限）</option>${DB.items.map(i=>`<option value="${i.id}">#${i.id} ${esc(i.titleZh)}</option>`).join('')}</select></div>
+      <div class="form-row"><label>期望安全等级含</label>
+        <select id="ev_safety"><option value="">（不限）</option><option value="极高">极高</option><option value="高">高</option><option value="中">中</option><option value="低">低</option></select></div>
+    </div>
+    <div class="form-row"><label>备注</label><input type="text" id="ev_note"></div>`,
+    onOk(){
+      const input = $('#ev_in').value.trim();
+      if(!input){toast('请输入用户消息','error');return false;}
+      DB.evals.push({id:nextId(DB.evals),group:$('#ev_group').value,input,
+        expectIntent:$('#ev_intent').value||null, expectKbId:+$('#ev_kb').value||null,
+        expectSafety:$('#ev_safety').value||null, note:$('#ev_note').value.trim(),
+        source:'seed', lastRun:null});
+      save(); renderEvals(); toast('用例已创建，可单测或一键回归');
+    }});
+}
+
+/* ══════════════════════════════════════════════════════════════
    十、路由与初始化
    ══════════════════════════════════════════════════════════════ */
 const PAGES = {
@@ -1021,8 +1492,12 @@ const PAGES = {
   prompts:['Prompt 管理','人设与场景话术 · 版本快照 · 回滚 · 渲染预览'],
   models:['大模型接入','OpenAI 兼容 · 多线路路由 · 参数与连通性管理'],
   playground:['Agent 测试台','实时对话 · ReAct Trace 回放 · 配置溯源'],
+  intents:['意图管理','关键词 · 权重 · 启停全部配置化 · 意图级测试'],
+  logs:['对话日志监控','线上/测试会话沉淀 · 转人工率 · 知识命中率'],
+  annotate:['标注与回流','坏例标注 · 一键回流知识库/意图/测评集'],
+  evals:['测评集管理','意图层/端到端/安全红线 · 一键回归 · 防退化'],
 };
-const RENDER = {dashboard:renderDashboard,knowledge:renderKnowledge,prompts:renderPrompts,models:renderModels,playground:renderPlayground};
+const RENDER = {dashboard:renderDashboard,knowledge:renderKnowledge,prompts:renderPrompts,models:renderModels,playground:renderPlayground,intents:renderIntents,logs:renderLogs,annotate:renderAnnotate,evals:renderEvals};
 function go(page){
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.page===page));
   document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.id==='page-'+page));
@@ -1034,7 +1509,7 @@ document.querySelectorAll('#nav a').forEach(a=>a.onclick=()=>go(a.dataset.page))
 $('#resetBtn').onclick = ()=>{
   openModal({title:'重置演示数据',okText:'确认重置',
     body:'<p>将清空你在本浏览器中的所有修改（知识库 / Prompt / 模型 / 会话），恢复到初始演示数据。</p>',
-    onOk(){ localStorage.removeItem(LS_KEY); DB = SEED(); save(); chatMsgs=[]; lastResult=null; go('dashboard'); toast('演示数据已重置'); }});
+    onOk(){ localStorage.removeItem(LS_KEY); DB = SEED(); refreshIntentMeta(); save(); chatMsgs=[]; lastResult=null; go('dashboard'); toast('演示数据已重置'); }});
 };
 go('dashboard');
 </script>
