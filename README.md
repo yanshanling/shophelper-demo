@@ -51,4 +51,7 @@
 
 ## 在线演示
 
-GitHub Pages: `https://yanshanling.github.io/shophelper-demo/`
+- 管理后台（B 端 · 飞轮闭环）: `https://yanshanling.github.io/shophelper-demo/`
+- 客户对话演示（C 端 · 移动版多语言客服）: `https://yanshanling.github.io/shophelper-demo/chat-demo.html`
+
+> `chat-demo.html` 为 C 端客户视角的移动版对话演示（多语言客服 Agent），与管理后台（B 端运营视角）互为补充：B 端看配置与数据飞轮，C 端看真实客户对话体验。
